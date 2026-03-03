@@ -14,6 +14,24 @@ st.set_page_config(
     layout="wide"
 )
 
+st.markdown(
+    """
+    <style>
+    div[data-testid="stSegmentedControl"] button[aria-checked="false"] {
+        background-color: #2f2f2f !important;
+        color: #e6e6e6 !important;
+        border: 1px solid #4a4a4a !important;
+    }
+    div[data-testid="stSegmentedControl"] button[aria-checked="true"] {
+        background-color: #4F8BF9 !important;
+        color: #ffffff !important;
+        border: 1px solid #4F8BF9 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Per-profile data location
 DATA_DIR = "user_data"
 PROFILES_FILE = os.path.join(DATA_DIR, "profiles.json")
@@ -46,6 +64,8 @@ if 'show_chat' not in st.session_state:
     st.session_state.show_chat = False
 
 if 'chat_sort_order' not in st.session_state:
+    st.session_state.chat_sort_order = "Newest"
+elif st.session_state.chat_sort_order not in ["Newest", "Oldest"]:
     st.session_state.chat_sort_order = "Newest"
 
 if 'selected_chat_profile_key' not in st.session_state:
