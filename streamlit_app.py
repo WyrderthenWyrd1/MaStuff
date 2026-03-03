@@ -71,36 +71,47 @@ def load_chat_messages():
 
 
 def get_mean_ai_response(user_message):
-    """Generate a sassy AI response using OpenAI (returns None if API not available)"""
+    """Generate a sassy AI response using Hugging Face (returns None if API fails)"""
     try:
-        import openai
+        import requests
         
         # Try to get API key from Streamlit secrets or environment
         api_key = None
-        if hasattr(st, 'secrets') and 'OPENAI_API_KEY' in st.secrets:
-            api_key = st.secrets['OPENAI_API_KEY']
-        elif 'OPENAI_API_KEY' in os.environ:
-            api_key = os.environ.get('OPENAI_API_KEY')
+        if hasattr(st, 'secrets') and 'HUGGINGFACE_API_KEY' in st.secrets:
+            api_key = st.secrets['HUGGINGFACE_API_KEY']
+        elif 'HUGGINGFACE_API_KEY' in os.environ:
+            api_key = os.environ.get('HUGGINGFACE_API_KEY')
         
         if api_key:
-            client = openai.OpenAI(api_key=api_key)
+            # Using Mistral-7B model (free on Hugging Face)
+            API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
+            headers = {"Authorization": f"Bearer {api_key}"}
             
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a sassy, witty chatbot with a dry sense of humor. Respond to messages with short but complete sentences (10-15 words). Be a bit sarcastic and playfully critical, but not genuinely mean. Think of it as friendly roasting - you're teasing, not trying to hurt feelings. Be clever and amusing."},
-                    {"role": "user", "content": user_message}
-                ],
-                max_tokens=30,
-                temperature=0.8
-            )
+            prompt = f"""You are a sassy, witty chatbot with a dry sense of humor. Respond to messages with short but complete sentences (10-15 words). Be a bit sarcastic and playfully critical, but not genuinely mean. Think of it as friendly roasting - you're teasing, not trying to hurt feelings. Be clever and amusing.
+
+User: {user_message}
+Bot:"""
             
-            return response.choices[0].message.content.strip()
-    except Exception as e:
-        # Return error message to help debug
-        return f"[Error: {str(e)[:50]}]"
+            payload = {
+                "inputs": prompt,
+                "parameters": {
+                    "max_new_tokens": 50,
+                    "temperature": 0.8,
+                    "top_p": 0.9,
+                    "return_full_text": False
+                }
+            }
+            
+            response = requests.post(API_URL, headers=headers, json=payload, timeout=10)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if isinstance(result, list) and len(result) > 0:
+                    return result[0]['generated_text'].strip()
+    except Exception:
+        pass
     
-    # Return None if API key not configured
+    # Return None if API fails or not configured
     return None
 
 
@@ -493,15 +504,15 @@ if st.session_state.show_chat:
     
     # Check if AI is available
     api_key = None
-    if hasattr(st, 'secrets') and 'OPENAI_API_KEY' in st.secrets:
-        api_key = st.secrets['OPENAI_API_KEY']
-    elif 'OPENAI_API_KEY' in os.environ:
-        api_key = os.environ.get('OPENAI_API_KEY')
+    if hasattr(st, 'secrets') and 'HUGGINGFACE_API_KEY' in st.secrets:
+        api_key = st.secrets['HUGGINGFACE_API_KEY']
+    elif 'HUGGINGFACE_API_KEY' in os.environ:
+        api_key = os.environ.get('HUGGINGFACE_API_KEY')
     
     if api_key:
-        st.caption("AI Bot: Active")
+        st.caption("🤖 AI Bot: Active (Hugging Face API connected)")
     else:
-        st.caption("AI Bot: Offline (no API key configured)")
+        st.caption("🤖 AI Bot: Offline (no API key)")
     
     # Display messages
     messages = load_chat_messages()
@@ -527,7 +538,7 @@ if st.session_state.show_chat:
             username = st.session_state.profile_name if st.session_state.profile_loaded else "Anonymous"
             save_chat_message(username, new_message, is_bot=False)
             
-            # AI bot responds almost always (95% chance) - only if API is available
+            # AI bot responds almost always (95% chance)
             if random.random() < 0.95:
                 # Show thinking indicator
                 thinking_placeholder = st.empty()
