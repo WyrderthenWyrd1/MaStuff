@@ -440,8 +440,8 @@ with st.sidebar:
                 profile_record.setdefault('name_color', '#4F8BF9')
                 profile_record.setdefault('avatar_emoji', '🙂')
                 profile_record.setdefault('avatar_image_b64', '')
-                    profile_record.setdefault('join_date', datetime.now().strftime("%Y-%m-%d"))
-                    profile_record.setdefault('blocked_profiles', [])
+                profile_record.setdefault('join_date', datetime.now().strftime("%Y-%m-%d"))
+                profile_record.setdefault('blocked_profiles', [])
                 profiles[profile_key] = profile_record
                 save_profiles(profiles)
 
