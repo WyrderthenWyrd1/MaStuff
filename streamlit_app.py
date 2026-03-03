@@ -3,7 +3,6 @@ import json
 import os
 import re
 import hashlib
-from datetime import datetime
 from typing import Dict, List
 
 # Page configuration
@@ -64,21 +63,46 @@ def load_chat_messages():
             with open(CHAT_FILE, 'r') as f:
                 data = json.load(f)
                 if isinstance(data, list):
-                    return data
+                    normalized_messages = []
+                    for msg in data:
+                        if not isinstance(msg, dict):
+                            continue
+
+                        if msg.get('is_bot', False):
+                            continue
+
+                        user = str(msg.get('user', '')).strip()
+                        message = str(msg.get('message', '')).strip()
+
+                        if not user or not message:
+                            continue
+
+                        if user.lower() in {'bot', 'ai', 'assistant'}:
+                            continue
+
+                        normalized_messages.append({
+                            'user': user,
+                            'message': message
+                        })
+
+                    if normalized_messages != data:
+                        with open(CHAT_FILE, 'w') as write_file:
+                            json.dump(normalized_messages[-50:], write_file, indent=2)
+
+                    return normalized_messages[-50:]
         except Exception:
             pass
     return []
 
 
-def save_chat_message(username, message, is_bot=False):
+
+def save_chat_message(username, message):
     """Save a new chat message"""
     try:
         messages = load_chat_messages()
         messages.append({
             'user': username,
-            'message': message,
-            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M"),
-            'is_bot': is_bot
+            'message': message
         })
         # Keep only last 50 messages
         messages = messages[-50:]
@@ -515,19 +539,12 @@ with col2:
         st.rerun()
 
 if st.session_state.show_chat:
-    st.subheader("Message Board")
-    
-    # Check if AI is available
-    api_key = None
-    if hasattr(st, 'secrets') and 'HUGGINGFACE_API_KEY' in st.secrets:
-        api_key = st.secrets['HUGGINGFACE_API_KEY']
-    elif 'HUGGINGFACE_API_KEY' in os.environ:
-        api_key = os.environ.get('HUGGINGFACE_API_KEY')
-    
-    if api_key:
-        st.caption("🤖 AI Bot: Active (Hugging Face API connected)")
-    else:
-        st.caption("🤖 AI Bot: Offline (no API key)")
+    chat_title_col, chat_refresh_col = st.columns([5, 1])
+    with chat_title_col:
+        st.subheader("Message Board")
+    with chat_refresh_col:
+        if st.button("⟳ Refresh", key="refresh_chat_btn", use_container_width=True):
+            st.rerun()
     
     # Display messages
     messages = load_chat_messages()
@@ -535,10 +552,15 @@ if st.session_state.show_chat:
         chat_container = st.container()
         with chat_container:
             for msg in messages[-20:]:
-                user_display = msg['user']
-                if msg.get('is_bot', False):
-                    user_display = "🤖 Bot"
-                st.text(f"{msg['timestamp']} - {user_display}: {msg['message']}")
+                current_user = st.session_state.profile_name if st.session_state.profile_loaded else "Anonymous"
+                is_current_user = msg['user'] == current_user
+                bubble_type = "user" if is_current_user else "assistant"
+                bubble_avatar = "🧑" if is_current_user else "👤"
+                with st.chat_message(bubble_type, avatar=bubble_avatar):
+                    st.markdown(f"**{msg['user']}**")
+                    st.write(msg['message'])
+    else:
+        st.caption("No messages yet. Start the conversation.")
     
     # Input for new message
     with st.form("chat_form", clear_on_submit=True):
@@ -549,25 +571,8 @@ if st.session_state.show_chat:
             submitted = st.form_submit_button("Send")
         
         if submitted and new_message:
-            import random
             username = st.session_state.profile_name if st.session_state.profile_loaded else "Anonymous"
-            save_chat_message(username, new_message, is_bot=False)
-            
-            # AI bot responds almost always (95% chance)
-            if random.random() < 0.95:
-                # Show thinking indicator
-                thinking_placeholder = st.empty()
-                thinking_placeholder.caption("🤖 Bot is typing...")
-                
-                import time
-                time.sleep(0.1)  # Small delay for realism
-                ai_response = get_mean_ai_response(new_message)
-                
-                thinking_placeholder.empty()  # Clear the thinking indicator
-                
-                if ai_response is not None:
-                    save_chat_message("Bot", ai_response, is_bot=True)
-            
+            save_chat_message(username, new_message)
             st.rerun()
 
 # Footer

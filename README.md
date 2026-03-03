@@ -29,20 +29,6 @@ streamlit run streamlit_app.py
 
 3. Open your browser to the URL shown (usually `http://localhost:8501`)
 
-### AI Chatbot Setup (Optional)
-
-The app includes an AI-powered chatbot in the message board. To enable real AI responses:
-
-1. Get a Hugging Face API key:
-   - Go to [huggingface.co](https://huggingface.co)
-   - Sign in with your GitHub account (free!)
-   - Go to Settings → Access Tokens
-   - Create a new token with "Read" access
-2. Create a `.streamlit/secrets.toml` file (see `.streamlit/secrets.toml.example`)
-3. Add your key: `HUGGINGFACE_API_KEY = "your-key-here"`
-
-**Note**: The bot stays silent without an API key, but with Hugging Face it's sassy and free!
-
 ### Deploy & Share with Friends 🚀
 
 Deploy for **FREE** on Streamlit Community Cloud:
@@ -58,13 +44,7 @@ Deploy for **FREE** on Streamlit Community Cloud:
    - Select your repository, branch, and `streamlit_app.py`
    - Click "Deploy"
 
-3. **Add Hugging Face API Key (Optional for AI chatbot)**:
-   - In your deployed app, click "Manage app" (bottom right)
-   - Go to Settings → Secrets
-   - Add: `HUGGINGFACE_API_KEY = "your-key-here"`
-   - Save and the app will restart with AI enabled
-
-4. **Share the URL**: Your friends can now access your app from anywhere!
+3. **Share the URL**: Your friends can now access your app from anywhere!
 
 **Note**: Data on Streamlit Cloud resets when the app restarts. For persistent data across deployments, consider using Streamlit's database integration.
 
