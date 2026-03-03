@@ -38,6 +38,9 @@ if 'profile_loaded' not in st.session_state:
 if 'last_loaded_profile' not in st.session_state:
     st.session_state.last_loaded_profile = ""
 
+if 'display_name' not in st.session_state:
+    st.session_state.display_name = ""
+
 if 'show_chat' not in st.session_state:
     st.session_state.show_chat = False
 
@@ -330,6 +333,7 @@ with st.sidebar:
                     profiles[profile_key] = {
                         'name': profile_input.strip(),
                         'pin_hash': hash_pin(pin_value),
+                        'display_name': profile_input.strip(),
                         'name_color': '#4F8BF9',
                         'avatar_emoji': '🙂',
                         'avatar_image_b64': ''
@@ -339,6 +343,7 @@ with st.sidebar:
 
                 profile_record = profiles.get(profile_key, {})
                 profile_record['name'] = profile_input.strip()
+                profile_record.setdefault('display_name', profile_input.strip())
                 profile_record.setdefault('name_color', '#4F8BF9')
                 profile_record.setdefault('avatar_emoji', '🙂')
                 profile_record.setdefault('avatar_image_b64', '')
@@ -346,6 +351,7 @@ with st.sidebar:
                 save_profiles(profiles)
 
                 st.session_state.profile_name = profile_input.strip()
+                st.session_state.display_name = profile_record.get('display_name', profile_input.strip())
                 st.session_state.profile_key = profile_key
                 st.session_state.classes = load_profile_data(profile_key)
                 st.session_state.current_class = None
@@ -355,6 +361,7 @@ with st.sidebar:
     with col2:
         if st.button("Sign Out", use_container_width=True):
             st.session_state.profile_name = ""
+            st.session_state.display_name = ""
             st.session_state.profile_key = ""
             st.session_state.profile_loaded = False
             st.session_state.classes = {}
@@ -366,10 +373,18 @@ with st.sidebar:
 
         profiles = load_profiles()
         current_profile = profiles.get(st.session_state.profile_key, {})
+        current_display_name = current_profile.get('display_name', st.session_state.profile_name)
         current_name_color = current_profile.get('name_color', '#4F8BF9')
         current_avatar_emoji = current_profile.get('avatar_emoji', '🙂')
 
         with st.expander("Chat Profile"):
+            selected_display_name = st.text_input(
+                "Display Name",
+                value=current_display_name,
+                max_chars=30,
+                key="profile_display_name_input"
+            )
+
             selected_name_color = st.color_picker(
                 "Name Color",
                 value=current_name_color,
@@ -405,9 +420,15 @@ with st.sidebar:
             col_a, col_b = st.columns(2)
             with col_a:
                 if st.button("Save Chat Style", use_container_width=True):
+                    cleaned_display_name = selected_display_name.strip()
+                    if not cleaned_display_name:
+                        st.warning("Display name cannot be empty")
+                        st.stop()
+
                     profile_data = profiles.get(st.session_state.profile_key, {})
                     profile_data['name'] = st.session_state.profile_name
                     profile_data['pin_hash'] = profile_data.get('pin_hash', '')
+                    profile_data['display_name'] = cleaned_display_name
                     profile_data['name_color'] = selected_name_color
                     profile_data['avatar_emoji'] = selected_avatar_emoji
                     if uploaded_avatar is not None:
@@ -416,12 +437,14 @@ with st.sidebar:
                         profile_data.setdefault('avatar_image_b64', '')
                     profiles[st.session_state.profile_key] = profile_data
                     save_profiles(profiles)
+                    st.session_state.display_name = cleaned_display_name
                     st.success("Chat profile updated")
             with col_b:
                 if st.button("Remove Picture", use_container_width=True):
                     profile_data = profiles.get(st.session_state.profile_key, {})
                     profile_data['name'] = st.session_state.profile_name
                     profile_data['pin_hash'] = profile_data.get('pin_hash', '')
+                    profile_data['display_name'] = selected_display_name.strip() or st.session_state.display_name or st.session_state.profile_name
                     profile_data['name_color'] = selected_name_color
                     profile_data['avatar_emoji'] = selected_avatar_emoji
                     profile_data['avatar_image_b64'] = ''
@@ -654,12 +677,10 @@ if st.session_state.show_chat:
         chat_container = st.container()
         with chat_container:
             for msg in messages[-20:]:
-                current_user = st.session_state.profile_name if st.session_state.profile_loaded else "Anonymous"
                 current_profile_key = st.session_state.profile_key if st.session_state.profile_loaded else ""
-                is_current_user = msg['user'] == current_user
                 message_profile_key = msg.get('profile_key') or sanitize_profile_key(msg['user'])
                 profile_style = get_profile_chat_style(message_profile_key, profiles)
-                bubble_type = "user" if is_current_user else "assistant"
+                bubble_type = "user" if current_profile_key and message_profile_key == current_profile_key else "assistant"
                 if current_profile_key and message_profile_key == current_profile_key:
                     bubble_type = "user"
                 bubble_avatar = get_avatar_for_chat(profile_style)
@@ -682,7 +703,7 @@ if st.session_state.show_chat:
             submitted = st.form_submit_button("Send")
         
         if submitted and new_message:
-            username = st.session_state.profile_name if st.session_state.profile_loaded else "Anonymous"
+            username = st.session_state.display_name if st.session_state.profile_loaded else "Anonymous"
             save_chat_message(username, new_message)
             st.rerun()
 
