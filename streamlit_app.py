@@ -8,6 +8,11 @@ import html
 from datetime import datetime
 from typing import Dict, List
 
+try:
+    from streamlit_autorefresh import st_autorefresh
+except Exception:
+    st_autorefresh = None
+
 # Page configuration
 st.set_page_config(
     page_title="Grade Calculator",
@@ -297,20 +302,6 @@ def render_duel_popup_html(title, body, actions_html=""):
             <div class="duel-popup-body">{html.escape(body)}</div>
             {actions_html}
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def render_duel_popup_autorefresh():
-    """Auto-refresh page every second while duel popup is active"""
-    st.markdown(
-        """
-        <script>
-        setTimeout(function () {
-            window.location.reload();
-        }, 1000);
-        </script>
         """,
         unsafe_allow_html=True,
     )
@@ -1132,6 +1123,28 @@ if st.session_state.show_chat:
     if current_profile_key and current_profile_key in profiles:
         blocked_profiles = set(profiles[current_profile_key].get('blocked_profiles', []))
 
+    incoming_pending = [
+        duel for duel in duel_data
+        if duel.get('status') == 'pending' and duel.get('challenged_key') == current_profile_key
+    ] if current_profile_key else []
+    outgoing_pending = [
+        duel for duel in duel_data
+        if duel.get('status') == 'pending' and duel.get('challenger_key') == current_profile_key
+    ] if current_profile_key else []
+    active_for_user = [
+        duel for duel in duel_data
+        if duel.get('status') == 'active' and current_profile_key in {duel.get('challenger_key'), duel.get('challenged_key')}
+    ] if current_profile_key else []
+
+    if st_autorefresh is not None:
+        if incoming_pending or outgoing_pending:
+            refresh_interval_ms = 700
+        elif active_for_user:
+            refresh_interval_ms = 1000
+        else:
+            refresh_interval_ms = 2500
+        st_autorefresh(interval=refresh_interval_ms, key="chat_live_refresh")
+
     if st.session_state.profile_loaded and current_profile_key:
         with st.expander("Duel"):
             other_profile_keys = [
@@ -1220,15 +1233,6 @@ if st.session_state.show_chat:
                             st.rerun()
 
     if st.session_state.profile_loaded and current_profile_key:
-        incoming_pending = [
-            duel for duel in duel_data
-            if duel.get('status') == 'pending' and duel.get('challenged_key') == current_profile_key
-        ]
-        outgoing_pending = [
-            duel for duel in duel_data
-            if duel.get('status') == 'pending' and duel.get('challenger_key') == current_profile_key
-        ]
-
         if incoming_pending:
             pending_duel = max(incoming_pending, key=lambda duel: str(duel.get('created_at', '')))
             challenger_name = get_profile_display_name(pending_duel.get('challenger_key', ''), profiles)
@@ -1245,7 +1249,6 @@ if st.session_state.show_chat:
                 f"{challenger_name} challenged you. Expires in {seconds_left}s.",
                 popup_actions
             )
-            render_duel_popup_autorefresh()
         elif outgoing_pending:
             pending_duel = max(outgoing_pending, key=lambda duel: str(duel.get('created_at', '')))
             challenged_name = get_profile_display_name(pending_duel.get('challenged_key', ''), profiles)
@@ -1254,7 +1257,6 @@ if st.session_state.show_chat:
                 "Duel Sent",
                 f"Waiting for {challenged_name}. Expires in {seconds_left}s."
             )
-            render_duel_popup_autorefresh()
 
     if st.session_state.selected_chat_profile_key:
         selected_profile_key = st.session_state.selected_chat_profile_key
