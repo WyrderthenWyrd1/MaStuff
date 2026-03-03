@@ -3,6 +3,7 @@ import json
 import os
 import re
 import hashlib
+from datetime import datetime
 from typing import Dict, List
 
 # Page configuration
@@ -14,6 +15,7 @@ st.set_page_config(
 # Per-profile data location
 DATA_DIR = "user_data"
 PROFILES_FILE = os.path.join(DATA_DIR, "profiles.json")
+CHAT_FILE = os.path.join(DATA_DIR, "chat.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # Initialize session state
@@ -35,6 +37,9 @@ if 'profile_loaded' not in st.session_state:
 if 'last_loaded_profile' not in st.session_state:
     st.session_state.last_loaded_profile = ""
 
+if 'show_chat' not in st.session_state:
+    st.session_state.show_chat = False
+
 
 def sanitize_profile_key(profile_name):
     """Create a safe file key from a profile name"""
@@ -50,6 +55,37 @@ def get_profile_data_file(profile_key):
 def hash_pin(pin):
     """Hash a 4-digit PIN"""
     return hashlib.sha256(pin.encode("utf-8")).hexdigest()
+
+
+def load_chat_messages():
+    """Load chat messages"""
+    if os.path.exists(CHAT_FILE):
+        try:
+            with open(CHAT_FILE, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return data
+        except Exception:
+            pass
+    return []
+
+
+def save_chat_message(username, message):
+    """Save a new chat message"""
+    try:
+        messages = load_chat_messages()
+        messages.append({
+            'user': username,
+            'message': message,
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M")
+        })
+        # Keep only last 50 messages
+        messages = messages[-50:]
+        with open(CHAT_FILE, 'w') as f:
+            json.dump(messages, f, indent=2)
+        return True
+    except Exception:
+        return False
 
 
 def load_profiles():
@@ -408,6 +444,38 @@ elif st.session_state.current_class:
 else:
     st.write("Select a class to continue")
 
-# Footer
+# Chat section
 st.divider()
+
+col1, col2 = st.columns([5, 1])
+with col2:
+    if st.button("💬 Chat" if not st.session_state.show_chat else "✕ Close"):
+        st.session_state.show_chat = not st.session_state.show_chat
+        st.rerun()
+
+if st.session_state.show_chat:
+    st.subheader("Message Board")
+    
+    # Display messages
+    messages = load_chat_messages()
+    if messages:
+        chat_container = st.container()
+        with chat_container:
+            for msg in messages[-20:]:
+                st.text(f"{msg['timestamp']} - {msg['user']}: {msg['message']}")
+    
+    # Input for new message
+    with st.form("chat_form", clear_on_submit=True):
+        col1, col2 = st.columns([5, 1])
+        with col1:
+            new_message = st.text_input("Message", key="chat_input", label_visibility="collapsed")
+        with col2:
+            submitted = st.form_submit_button("Send")
+        
+        if submitted and new_message:
+            username = st.session_state.profile_name if st.session_state.profile_loaded else "Anonymous"
+            save_chat_message(username, new_message)
+            st.rerun()
+
+# Footer
 st.caption("Made by seb.")
