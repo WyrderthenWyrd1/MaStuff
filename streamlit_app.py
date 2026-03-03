@@ -3,6 +3,8 @@ import json
 import os
 import re
 import hashlib
+import base64
+import html
 from typing import Dict, List
 
 # Page configuration
@@ -82,7 +84,8 @@ def load_chat_messages():
 
                         normalized_messages.append({
                             'user': user,
-                            'message': message
+                            'message': message,
+                            'profile_key': str(msg.get('profile_key', '')).strip()
                         })
 
                     if normalized_messages != data:
@@ -102,7 +105,8 @@ def save_chat_message(username, message):
         messages = load_chat_messages()
         messages.append({
             'user': username,
-            'message': message
+            'message': message,
+            'profile_key': st.session_state.profile_key if st.session_state.profile_loaded else ""
         })
         # Keep only last 50 messages
         messages = messages[-50:]
@@ -135,6 +139,27 @@ def save_profiles(profiles):
     except Exception as e:
         st.error(f"Failed to save profiles: {str(e)}")
         return False
+
+
+def get_profile_chat_style(profile_key, profiles):
+    """Get chat style settings for a profile"""
+    profile = profiles.get(profile_key, {}) if isinstance(profiles, dict) else {}
+    return {
+        'name_color': profile.get('name_color', '#4F8BF9'),
+        'avatar_emoji': profile.get('avatar_emoji', '🙂'),
+        'avatar_image_b64': profile.get('avatar_image_b64', '')
+    }
+
+
+def get_avatar_for_chat(profile_style):
+    """Build Streamlit chat avatar from profile settings"""
+    avatar_b64 = profile_style.get('avatar_image_b64', '')
+    if avatar_b64:
+        try:
+            return base64.b64decode(avatar_b64)
+        except Exception:
+            pass
+    return profile_style.get('avatar_emoji', '🙂')
 
 
 def load_profile_data(profile_key):
@@ -304,10 +329,21 @@ with st.sidebar:
                 else:
                     profiles[profile_key] = {
                         'name': profile_input.strip(),
-                        'pin_hash': hash_pin(pin_value)
+                        'pin_hash': hash_pin(pin_value),
+                        'name_color': '#4F8BF9',
+                        'avatar_emoji': '🙂',
+                        'avatar_image_b64': ''
                     }
                     if not save_profiles(profiles):
                         st.stop()
+
+                profile_record = profiles.get(profile_key, {})
+                profile_record['name'] = profile_input.strip()
+                profile_record.setdefault('name_color', '#4F8BF9')
+                profile_record.setdefault('avatar_emoji', '🙂')
+                profile_record.setdefault('avatar_image_b64', '')
+                profiles[profile_key] = profile_record
+                save_profiles(profiles)
 
                 st.session_state.profile_name = profile_input.strip()
                 st.session_state.profile_key = profile_key
@@ -327,6 +363,71 @@ with st.sidebar:
 
     if st.session_state.profile_loaded:
         st.caption(f"Profile: {st.session_state.profile_name}")
+
+        profiles = load_profiles()
+        current_profile = profiles.get(st.session_state.profile_key, {})
+        current_name_color = current_profile.get('name_color', '#4F8BF9')
+        current_avatar_emoji = current_profile.get('avatar_emoji', '🙂')
+
+        with st.expander("Chat Profile"):
+            selected_name_color = st.color_picker(
+                "Name Color",
+                value=current_name_color,
+                key="profile_name_color_picker"
+            )
+
+            selected_avatar_emoji = st.selectbox(
+                "Avatar Emoji",
+                options=['🙂', '😎', '🧠', '🎯', '🔥', '⭐', '🐱', '🐶', '🦊', '🐼'],
+                index=['🙂', '😎', '🧠', '🎯', '🔥', '⭐', '🐱', '🐶', '🦊', '🐼'].index(current_avatar_emoji)
+                if current_avatar_emoji in ['🙂', '😎', '🧠', '🎯', '🔥', '⭐', '🐱', '🐶', '🦊', '🐼'] else 0,
+                key="profile_avatar_emoji_select"
+            )
+
+            uploaded_avatar = st.file_uploader(
+                "Profile Picture (optional)",
+                type=["png", "jpg", "jpeg", "webp"],
+                key="profile_avatar_upload"
+            )
+
+            preview_style = get_profile_chat_style(st.session_state.profile_key, profiles)
+            preview_style['name_color'] = selected_name_color
+            preview_style['avatar_emoji'] = selected_avatar_emoji
+            if uploaded_avatar is not None:
+                preview_style['avatar_image_b64'] = base64.b64encode(uploaded_avatar.getvalue()).decode("utf-8")
+
+            avatar_preview = get_avatar_for_chat(preview_style)
+            if isinstance(avatar_preview, bytes):
+                st.image(avatar_preview, width=60)
+            else:
+                st.markdown(f"### {avatar_preview}")
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button("Save Chat Style", use_container_width=True):
+                    profile_data = profiles.get(st.session_state.profile_key, {})
+                    profile_data['name'] = st.session_state.profile_name
+                    profile_data['pin_hash'] = profile_data.get('pin_hash', '')
+                    profile_data['name_color'] = selected_name_color
+                    profile_data['avatar_emoji'] = selected_avatar_emoji
+                    if uploaded_avatar is not None:
+                        profile_data['avatar_image_b64'] = base64.b64encode(uploaded_avatar.getvalue()).decode("utf-8")
+                    else:
+                        profile_data.setdefault('avatar_image_b64', '')
+                    profiles[st.session_state.profile_key] = profile_data
+                    save_profiles(profiles)
+                    st.success("Chat profile updated")
+            with col_b:
+                if st.button("Remove Picture", use_container_width=True):
+                    profile_data = profiles.get(st.session_state.profile_key, {})
+                    profile_data['name'] = st.session_state.profile_name
+                    profile_data['pin_hash'] = profile_data.get('pin_hash', '')
+                    profile_data['name_color'] = selected_name_color
+                    profile_data['avatar_emoji'] = selected_avatar_emoji
+                    profile_data['avatar_image_b64'] = ''
+                    profiles[st.session_state.profile_key] = profile_data
+                    save_profiles(profiles)
+                    st.success("Profile picture removed")
 
     st.divider()
     st.header("Classes")
@@ -548,16 +649,26 @@ if st.session_state.show_chat:
     
     # Display messages
     messages = load_chat_messages()
+    profiles = load_profiles()
     if messages:
         chat_container = st.container()
         with chat_container:
             for msg in messages[-20:]:
                 current_user = st.session_state.profile_name if st.session_state.profile_loaded else "Anonymous"
+                current_profile_key = st.session_state.profile_key if st.session_state.profile_loaded else ""
                 is_current_user = msg['user'] == current_user
+                message_profile_key = msg.get('profile_key') or sanitize_profile_key(msg['user'])
+                profile_style = get_profile_chat_style(message_profile_key, profiles)
                 bubble_type = "user" if is_current_user else "assistant"
-                bubble_avatar = "🧑" if is_current_user else "👤"
+                if current_profile_key and message_profile_key == current_profile_key:
+                    bubble_type = "user"
+                bubble_avatar = get_avatar_for_chat(profile_style)
+                safe_user_name = html.escape(msg['user'])
                 with st.chat_message(bubble_type, avatar=bubble_avatar):
-                    st.markdown(f"**{msg['user']}**")
+                    st.markdown(
+                        f"<span style='font-weight:700; color:{profile_style['name_color']};'>{safe_user_name}</span>",
+                        unsafe_allow_html=True
+                    )
                     st.write(msg['message'])
     else:
         st.caption("No messages yet. Start the conversation.")
