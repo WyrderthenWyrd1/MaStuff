@@ -45,6 +45,9 @@ if 'display_name' not in st.session_state:
 if 'show_chat' not in st.session_state:
     st.session_state.show_chat = False
 
+if 'chat_sort_order' not in st.session_state:
+    st.session_state.chat_sort_order = "Newest"
+
 if 'selected_chat_profile_key' not in st.session_state:
     st.session_state.selected_chat_profile_key = ""
 
@@ -799,9 +802,16 @@ with col2:
         st.rerun()
 
 if st.session_state.show_chat:
-    chat_title_col, chat_refresh_col = st.columns([5, 1])
+    chat_title_col, chat_sort_col, chat_refresh_col = st.columns([4, 2, 1])
     with chat_title_col:
         st.subheader("Message Board")
+    with chat_sort_col:
+        st.segmented_control(
+            "Order",
+            options=["Newest", "Oldest"],
+            key="chat_sort_order",
+            label_visibility="collapsed"
+        )
     with chat_refresh_col:
         if st.button("⟳ Refresh", key="refresh_chat_btn", use_container_width=True):
             st.rerun()
@@ -877,9 +887,13 @@ if st.session_state.show_chat:
     ]
 
     if visible_messages:
-        chat_container = st.container()
+        chat_container = st.container(height=460, border=True)
         with chat_container:
-            for idx, msg in enumerate(visible_messages[-20:]):
+            if st.session_state.chat_sort_order == "Oldest":
+                recent_window = visible_messages[-200:]
+            else:
+                recent_window = list(reversed(visible_messages[-200:]))
+            for idx, msg in enumerate(recent_window):
                 message_profile_key = msg.get('profile_key') or sanitize_profile_key(msg['user'])
                 profile_style = get_profile_chat_style(message_profile_key, profiles)
                 bubble_type = "user" if current_profile_key and message_profile_key == current_profile_key else "assistant"
