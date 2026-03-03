@@ -70,51 +70,6 @@ def load_chat_messages():
     return []
 
 
-def get_mean_ai_response(user_message):
-    """Generate a sassy AI response using Hugging Face (returns None if API fails)"""
-    try:
-        import requests
-        
-        # Try to get API key from Streamlit secrets or environment
-        api_key = None
-        if hasattr(st, 'secrets') and 'HUGGINGFACE_API_KEY' in st.secrets:
-            api_key = st.secrets['HUGGINGFACE_API_KEY']
-        elif 'HUGGINGFACE_API_KEY' in os.environ:
-            api_key = os.environ.get('HUGGINGFACE_API_KEY')
-        
-        if api_key:
-            # Using Mistral-7B model (free on Hugging Face)
-            API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
-            headers = {"Authorization": f"Bearer {api_key}"}
-            
-            prompt = f"""You are a sassy, witty chatbot with a dry sense of humor. Respond to messages with short but complete sentences (10-15 words). Be a bit sarcastic and playfully critical, but not genuinely mean. Think of it as friendly roasting - you're teasing, not trying to hurt feelings. Be clever and amusing.
-
-User: {user_message}
-Bot:"""
-            
-            payload = {
-                "inputs": prompt,
-                "parameters": {
-                    "max_new_tokens": 50,
-                    "temperature": 0.8,
-                    "top_p": 0.9,
-                    "return_full_text": False
-                }
-            }
-            
-            response = requests.post(API_URL, headers=headers, json=payload, timeout=10)
-            
-            if response.status_code == 200:
-                result = response.json()
-                if isinstance(result, list) and len(result) > 0:
-                    return result[0]['generated_text'].strip()
-    except Exception:
-        pass
-    
-    # Return None if API fails or not configured
-    return None
-
-
 def save_chat_message(username, message, is_bot=False):
     """Save a new chat message"""
     try:
