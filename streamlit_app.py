@@ -1305,8 +1305,8 @@ if st.session_state.show_chat:
             duel_id = html.escape(str(pending_duel.get('id', '')))
             popup_actions = (
                 '<div class="duel-popup-actions">'
-                f'<a class="duel-popup-btn" href="?duel_action=accept&duel_id={duel_id}">✓</a>'
-                f'<a class="duel-popup-btn" href="?duel_action=decline&duel_id={duel_id}">✕</a>'
+                f'<a class="duel-popup-btn" target="_self" href="?duel_action=accept&duel_id={duel_id}">✓</a>'
+                f'<a class="duel-popup-btn" target="_self" href="?duel_action=decline&duel_id={duel_id}">✕</a>'
                 '</div>'
             )
             render_duel_popup_html(
