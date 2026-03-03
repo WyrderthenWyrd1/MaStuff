@@ -8,7 +8,6 @@ from typing import Dict, List
 # Page configuration
 st.set_page_config(
     page_title="Grade Calculator",
-    page_icon="📚",
     layout="wide"
 )
 
@@ -169,7 +168,7 @@ def calculate_overall_grade(class_name):
     return None, None
 
 # Main app
-st.title("📚 Grade Calculator")
+st.title("Grade Calculator")
 
 # Sidebar for class management
 with st.sidebar:
@@ -178,28 +177,24 @@ with st.sidebar:
     profile_input = st.text_input(
         "Profile Name",
         value=st.session_state.profile_name,
-        key="profile_name_input",
-        placeholder="e.g., seb"
+        key="profile_name_input"
     )
 
     pin_input = st.text_input(
-        "4-digit PIN",
+        "PIN",
         type="password",
         max_chars=4,
-        key="profile_pin_input",
-        placeholder="1234"
+        key="profile_pin_input"
     )
-
-    st.caption("New profile: set a PIN. Existing profile: enter its PIN.")
 
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Load Profile", use_container_width=True):
             profile_key = sanitize_profile_key(profile_input)
             if not profile_key:
-                st.warning("Enter a valid profile name.")
+                st.warning("Enter a valid profile name")
             elif not re.fullmatch(r"\d{4}", pin_input.strip()):
-                st.warning("PIN must be exactly 4 numbers.")
+                st.warning("PIN must be 4 digits")
             else:
                 pin_value = pin_input.strip()
                 profiles = load_profiles()
@@ -207,7 +202,7 @@ with st.sidebar:
                 if profile_key in profiles:
                     saved_hash = profiles[profile_key].get('pin_hash', '')
                     if saved_hash != hash_pin(pin_value):
-                        st.error("Incorrect PIN for this profile.")
+                        st.error("Incorrect PIN")
                         st.stop()
                 else:
                     profiles[profile_key] = {
@@ -223,7 +218,6 @@ with st.sidebar:
                 st.session_state.current_class = None
                 st.session_state.profile_loaded = True
                 st.session_state.last_loaded_profile = profile_input.strip()
-                st.success(f"Loaded profile: {st.session_state.profile_name}")
                 st.rerun()
     with col2:
         if st.button("Sign Out", use_container_width=True):
@@ -235,31 +229,28 @@ with st.sidebar:
             st.rerun()
 
     if st.session_state.profile_loaded:
-        st.caption(f"Current profile: {st.session_state.profile_name}")
-    else:
-        st.info("Load your profile to keep your own saved data.")
+        st.caption(f"Profile: {st.session_state.profile_name}")
 
     st.divider()
     st.header("Classes")
     
     if st.session_state.profile_loaded:
         # Add new class
-        with st.expander("➕ Add New Class"):
+        with st.expander("Add New Class"):
             new_class = st.text_input("Class Name", key="new_class_input")
             if st.button("Add Class"):
                 if new_class:
                     if new_class in st.session_state.classes:
-                        st.error("Class already exists!")
+                        st.error("Class already exists")
                     else:
                         st.session_state.classes[new_class] = {
                             'categories': {}
                         }
                         st.session_state.current_class = new_class
-                        if save_data():
-                            st.success(f"Added {new_class}!")
-                            st.rerun()
+                        save_data()
+                        st.rerun()
                 else:
-                    st.warning("Please enter a class name")
+                    st.warning("Enter a class name")
     
     # List classes
     if st.session_state.profile_loaded and st.session_state.classes:
@@ -271,18 +262,16 @@ with st.sidebar:
                     st.session_state.current_class = class_name
                     st.rerun()
             with col2:
-                if st.button("🗑️", key=f"del_class_{class_name}"):
+                if st.button("Delete", key=f"del_class_{class_name}"):
                     del st.session_state.classes[class_name]
                     if st.session_state.current_class == class_name:
                         st.session_state.current_class = None
                     save_data()
                     st.rerun()
-    elif st.session_state.profile_loaded:
-        st.info("No classes yet. Add one above!")
 
 # Main content area
 if not st.session_state.profile_loaded:
-    st.info("👈 Load your profile in the sidebar to access your own saved data.")
+    st.write("Load profile to begin")
 elif st.session_state.current_class:
     class_name = st.session_state.current_class
     st.header(f"{class_name}")
@@ -291,13 +280,11 @@ elif st.session_state.current_class:
     overall, letter = calculate_overall_grade(class_name)
     if overall is not None:
         st.markdown(f"### Current Grade: **{overall:.2f}%** ({letter})")
-    else:
-        st.info("Add categories and assignments to see your grade")
     
     st.divider()
     
     # Add category section
-    with st.expander("➕ Add New Category"):
+    with st.expander("Add New Category"):
         col1, col2 = st.columns(2)
         with col1:
             cat_name = st.text_input("Category Name", key="new_cat_name")
@@ -306,17 +293,16 @@ elif st.session_state.current_class:
         
         if st.button("Add Category"):
             if not cat_name:
-                st.warning("Please enter a category name")
+                st.warning("Enter a category name")
             elif cat_name in st.session_state.classes[class_name]['categories']:
-                st.error("Category already exists!")
+                st.error("Category already exists")
             else:
                 st.session_state.classes[class_name]['categories'][cat_name] = {
                     'weight': cat_weight,
                     'assignments': []
                 }
-                if save_data():
-                    st.success(f"Added category: {cat_name}")
-                    st.rerun()
+                save_data()
+                st.rerun()
     
     # Display categories and assignments
     categories = st.session_state.classes[class_name]['categories']
@@ -330,19 +316,19 @@ elif st.session_state.current_class:
                 # Category header
                 col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
                 with col1:
-                    st.subheader(f"📁 {cat_name}")
+                    st.subheader(f"{cat_name}")
                 with col2:
                     st.metric("Weight", f"{cat_data['weight']}%")
                 with col3:
                     st.metric("Grade", f"{cat_grade:.1f}%")
                 with col4:
-                    if st.button("🗑️", key=f"del_cat_{cat_name}"):
+                    if st.button("Delete", key=f"del_cat_{cat_name}"):
                         del st.session_state.classes[class_name]['categories'][cat_name]
                         save_data()
                         st.rerun()
                 
                 # Add assignment to this category
-                with st.expander(f"➕ Add Assignment to {cat_name}"):
+                with st.expander(f"Add Assignment to {cat_name}"):
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         assign_name = st.text_input("Assignment Name", key=f"assign_name_{cat_name}")
@@ -353,7 +339,7 @@ elif st.session_state.current_class:
                     
                     if st.button("Add Assignment", key=f"add_assign_{cat_name}"):
                         if not assign_name:
-                            st.warning("Please enter an assignment name")
+                            st.warning("Enter an assignment name")
                         elif total_points <= 0:
                             st.warning("Total points must be greater than 0")
                         else:
@@ -362,9 +348,8 @@ elif st.session_state.current_class:
                                 'total': total_points,
                                 'earned': earned_points
                             })
-                            if save_data():
-                                st.success(f"Added assignment: {assign_name}")
-                                st.rerun()
+                            save_data()
+                            st.rerun()
                 
                 # Display assignments
                 if cat_data['assignments']:
@@ -373,19 +358,19 @@ elif st.session_state.current_class:
                         
                         col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
                         with col1:
-                            st.write(f"📝 {assign['name']}")
+                            st.write(f"{assign['name']}")
                         with col2:
                             st.write(f"{assign['earned']}/{assign['total']}")
                         with col3:
                             st.write(f"{percentage:.1f}%")
                         with col4:
                             # Edit button
-                            if st.button("✏️", key=f"edit_{cat_name}_{idx}"):
+                            if st.button("Edit", key=f"edit_{cat_name}_{idx}"):
                                 st.session_state[f'editing_{cat_name}_{idx}'] = True
                                 st.rerun()
                         with col5:
                             # Delete button
-                            if st.button("🗑️", key=f"del_{cat_name}_{idx}"):
+                            if st.button("Delete", key=f"del_{cat_name}_{idx}"):
                                 st.session_state.classes[class_name]['categories'][cat_name]['assignments'].pop(idx)
                                 save_data()
                                 st.rerun()
@@ -417,15 +402,11 @@ elif st.session_state.current_class:
                                     if st.form_submit_button("Cancel"):
                                         st.session_state[f'editing_{cat_name}_{idx}'] = False
                                         st.rerun()
-                else:
-                    st.info(f"No assignments in {cat_name} yet")
                 
                 st.divider()
-    else:
-        st.info("No categories yet. Add one above to get started!")
 
 else:
-    st.info("👈 Select or create a class from the sidebar to get started!")
+    st.write("Select a class to continue")
 
 # Footer
 st.divider()
