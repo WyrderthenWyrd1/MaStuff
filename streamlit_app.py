@@ -27,6 +27,12 @@ if 'classes' not in st.session_state:
 if 'current_class' not in st.session_state:
     st.session_state.current_class = None
 
+
+def get_class_icon(class_name):
+    """Get icon for a class, with fallback for older saved data"""
+    class_data = st.session_state.classes.get(class_name, {})
+    return class_data.get('icon', '📖')
+
 def save_data():
     """Save data to JSON file"""
     try:
@@ -109,13 +115,21 @@ with st.sidebar:
     
     # Add new class
     with st.expander("➕ Add New Class"):
-        new_class = st.text_input("Class Name", key="new_class_input")
+        class_icon_choices = ["📖", "📘", "📗", "📕", "🧪", "🧮", "📝", "💻", "🎨", "🌍", "🎵", "🏫"]
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            new_class = st.text_input("Class Name", key="new_class_input")
+        with col2:
+            new_class_icon = st.selectbox("Icon", options=class_icon_choices, index=0, key="new_class_icon")
         if st.button("Add Class"):
             if new_class:
                 if new_class in st.session_state.classes:
                     st.error("Class already exists!")
                 else:
-                    st.session_state.classes[new_class] = {'categories': {}}
+                    st.session_state.classes[new_class] = {
+                        'icon': new_class_icon,
+                        'categories': {}
+                    }
                     st.session_state.current_class = new_class
                     if save_data():
                         st.success(f"Added {new_class}!")
@@ -127,9 +141,10 @@ with st.sidebar:
     if st.session_state.classes:
         st.subheader("Your Classes")
         for class_name in sorted(st.session_state.classes.keys()):
+            class_icon = get_class_icon(class_name)
             col1, col2 = st.columns([3, 1])
             with col1:
-                if st.button(class_name, key=f"class_{class_name}", use_container_width=True):
+                if st.button(f"{class_icon} {class_name}", key=f"class_{class_name}", use_container_width=True):
                     st.session_state.current_class = class_name
                     st.rerun()
             with col2:
@@ -145,7 +160,8 @@ with st.sidebar:
 # Main content area
 if st.session_state.current_class:
     class_name = st.session_state.current_class
-    st.header(f"📖 {class_name}")
+    class_icon = get_class_icon(class_name)
+    st.header(f"{class_icon} {class_name}")
     
     # Calculate and display overall grade
     overall, letter = calculate_overall_grade(class_name)
@@ -289,4 +305,4 @@ else:
 
 # Footer
 st.divider()
-st.caption("💾 All data is automatically saved locally")
+st.caption("Made by seb.")
