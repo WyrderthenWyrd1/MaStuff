@@ -826,12 +826,15 @@ if st.session_state.show_chat:
     with chat_title_col:
         st.subheader("Message Board")
     with chat_sort_col:
-        st.segmented_control(
+        selected_order = st.segmented_control(
             "Order",
             options=["Newest", "Oldest"],
+            default=st.session_state.chat_sort_order,
             key="chat_sort_order",
             label_visibility="collapsed"
         )
+        if selected_order in ["Newest", "Oldest"]:
+            st.session_state.chat_sort_order = selected_order
     with chat_refresh_col:
         if st.button("⟳ Refresh", key="refresh_chat_btn", use_container_width=True):
             st.rerun()
@@ -909,10 +912,10 @@ if st.session_state.show_chat:
     if visible_messages:
         chat_container = st.container(height=460, border=True)
         with chat_container:
-            if st.session_state.chat_sort_order == "Oldest":
-                recent_window = visible_messages[-200:]
+            if st.session_state.chat_sort_order == "Newest":
+                recent_window = list(reversed(visible_messages))[:200]
             else:
-                recent_window = list(reversed(visible_messages[-200:]))
+                recent_window = visible_messages[:200]
             for idx, msg in enumerate(recent_window):
                 message_profile_key = msg.get('profile_key') or sanitize_profile_key(msg['user'])
                 profile_style = get_profile_chat_style(message_profile_key, profiles)
