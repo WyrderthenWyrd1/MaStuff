@@ -90,6 +90,15 @@ if 'duel_overlay_id' not in st.session_state:
 if 'duel_overlay_opened_ids' not in st.session_state:
     st.session_state.duel_overlay_opened_ids = []
 
+if 'duel_request_overlay_open' not in st.session_state:
+    st.session_state.duel_request_overlay_open = False
+
+if 'duel_request_overlay_id' not in st.session_state:
+    st.session_state.duel_request_overlay_id = ""
+
+if 'duel_request_overlay_opened_ids' not in st.session_state:
+    st.session_state.duel_request_overlay_opened_ids = []
+
 
 def sanitize_profile_key(profile_name):
     """Create a safe file key from a profile name"""
@@ -254,101 +263,12 @@ def get_duel_seconds_left(duel):
     return max(0, int(DUEL_EXPIRY_SECONDS - elapsed))
 
 
-def render_duel_popup_html(title, body, actions_html=""):
-    """Render a fixed bottom-right duel popup"""
-    st.markdown(
-        f"""
-        <style>
-        .duel-popup-card {{
-            position: fixed;
-            right: 18px;
-            bottom: 18px;
-            width: 320px;
-            background: #171717;
-            border: 1px solid #3f3f3f;
-            border-radius: 12px;
-            box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
-            padding: 12px 14px;
-            z-index: 9999;
-        }}
-        .duel-popup-title {{
-            color: #ffffff;
-            font-weight: 700;
-            font-size: 15px;
-            margin-bottom: 6px;
-        }}
-        .duel-popup-body {{
-            color: #d9d9d9;
-            font-size: 14px;
-            line-height: 1.35;
-            margin-bottom: 10px;
-        }}
-        .duel-popup-actions {{
-            display: flex;
-            gap: 8px;
-        }}
-        .duel-popup-btn {{
-            width: 42px;
-            height: 34px;
-            border-radius: 8px;
-            border: 1px solid #555;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            text-decoration: none;
-            color: #fff;
-            background: #2a2a2a;
-            font-size: 18px;
-            font-weight: 700;
-        }}
-        .duel-popup-btn:hover {{
-            background: #353535;
-            border-color: #6a6a6a;
-        }}
-        </style>
-        <div class="duel-popup-card">
-            <div class="duel-popup-title">{html.escape(title)}</div>
-            <div class="duel-popup-body">{html.escape(body)}</div>
-            {actions_html}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def get_query_param_value(name):
     """Get query param value as a single string"""
     value = st.query_params.get(name)
     if isinstance(value, list):
         return value[0] if value else ""
     return value or ""
-
-
-def handle_duel_query_action(duel_data, current_profile_key):
-    """Handle popup accept/decline links"""
-    action = get_query_param_value("duel_action")
-    duel_id = get_query_param_value("duel_id")
-    if action not in {"accept", "decline"} or not duel_id or not current_profile_key:
-        return
-
-    changed = False
-    for duel in duel_data:
-        if (
-            duel.get('id') == duel_id
-            and duel.get('status') == 'pending'
-            and duel.get('challenged_key') == current_profile_key
-        ):
-            duel['status'] = 'active' if action == 'accept' else 'declined'
-            changed = True
-            break
-
-    st.query_params.clear()
-    if changed:
-        save_duels(duel_data)
-        if action == "accept":
-            st.session_state.duel_overlay_id = duel_id
-            st.session_state.duel_overlay_open = True
-    st.rerun()
 
 
 def handle_profile_query_action():
@@ -417,6 +337,52 @@ def render_duel_game_overlay(duel_id, duel_data, profiles, current_profile_key):
             st.rerun()
 
     duel_dialog()
+
+
+def render_duel_request_overlay(duel_id, duel_data, profiles, current_profile_key):
+    """Render incoming duel request in overlay dialog"""
+    if not hasattr(st, 'dialog'):
+        return
+
+    @st.dialog("Duel Request")
+    def duel_request_dialog():
+        duel = next((item for item in duel_data if item.get('id') == duel_id), None)
+        if not duel or duel.get('status') != 'pending' or duel.get('challenged_key') != current_profile_key:
+            st.caption("This duel request is no longer pending.")
+            if st.button("Close", key=f"close_duel_request_{duel_id}", use_container_width=True):
+                st.session_state.duel_request_overlay_open = False
+                st.rerun()
+            return
+
+        challenger_name = get_profile_display_name(duel.get('challenger_key', ''), profiles)
+        seconds_left = get_duel_seconds_left(duel)
+
+        st.write(f"{challenger_name} challenged you to a duel.")
+        st.caption(f"Expires in {seconds_left}s")
+
+        accept_col, decline_col = st.columns(2)
+        with accept_col:
+            if st.button("✓ Accept", key=f"overlay_accept_duel_{duel_id}", use_container_width=True):
+                duel['status'] = 'active'
+                save_duels(duel_data)
+                st.session_state.duel_request_overlay_open = False
+                st.session_state.duel_overlay_id = duel_id
+                st.session_state.duel_overlay_open = True
+                if duel_id not in st.session_state.duel_overlay_opened_ids:
+                    st.session_state.duel_overlay_opened_ids.append(duel_id)
+                st.rerun()
+        with decline_col:
+            if st.button("✕ Decline", key=f"overlay_decline_duel_{duel_id}", use_container_width=True):
+                duel['status'] = 'declined'
+                save_duels(duel_data)
+                st.session_state.duel_request_overlay_open = False
+                st.rerun()
+
+        if st.button("Minimize", key=f"overlay_minimize_request_{duel_id}", use_container_width=True):
+            st.session_state.duel_request_overlay_open = False
+            st.rerun()
+
+    duel_request_dialog()
 
 
 def resolve_due_duels_and_announce(duels, profiles):
@@ -1197,8 +1163,6 @@ if st.session_state.show_chat:
 
     current_profile_key = st.session_state.profile_key if st.session_state.profile_loaded else ""
     handle_profile_query_action()
-    if current_profile_key:
-        handle_duel_query_action(duel_data, current_profile_key)
 
     blocked_profiles = set()
     if current_profile_key and current_profile_key in profiles:
@@ -1272,7 +1236,7 @@ if st.session_state.show_chat:
                 if duel.get('status') == 'pending' and duel.get('challenged_key') == current_profile_key
             ]
             if incoming_challenges:
-                st.caption("You have incoming duel requests. Use the bottom-right popup to accept or decline.")
+                st.caption("You have incoming duel requests.")
 
             active_duels = [
                 duel for duel in duel_data
@@ -1298,29 +1262,29 @@ if st.session_state.show_chat:
                         st.rerun()
 
     if st.session_state.profile_loaded and current_profile_key:
-        if incoming_pending:
-            pending_duel = max(incoming_pending, key=lambda duel: str(duel.get('created_at', '')))
-            challenger_name = get_profile_display_name(pending_duel.get('challenger_key', ''), profiles)
-            seconds_left = get_duel_seconds_left(pending_duel)
-            duel_id = html.escape(str(pending_duel.get('id', '')))
-            popup_actions = (
-                '<div class="duel-popup-actions">'
-                f'<a class="duel-popup-btn" target="_self" href="?duel_action=accept&duel_id={duel_id}">✓</a>'
-                f'<a class="duel-popup-btn" target="_self" href="?duel_action=decline&duel_id={duel_id}">✕</a>'
-                '</div>'
-            )
-            render_duel_popup_html(
-                "Duel Request",
-                f"{challenger_name} challenged you. Expires in {seconds_left}s.",
-                popup_actions
-            )
-        elif outgoing_pending:
-            pending_duel = max(outgoing_pending, key=lambda duel: str(duel.get('created_at', '')))
-            challenged_name = get_profile_display_name(pending_duel.get('challenged_key', ''), profiles)
-            seconds_left = get_duel_seconds_left(pending_duel)
-            render_duel_popup_html(
-                "Duel Sent",
-                f"Waiting for {challenged_name}. Expires in {seconds_left}s."
+        current_pending_ids = [
+            duel.get('id') for duel in duel_data
+            if duel.get('status') == 'pending' and duel.get('challenged_key') == current_profile_key
+        ]
+
+        st.session_state.duel_request_overlay_opened_ids = [
+            duel_id for duel_id in st.session_state.duel_request_overlay_opened_ids
+            if duel_id in current_pending_ids
+        ]
+
+        for pending_id in current_pending_ids:
+            if pending_id not in st.session_state.duel_request_overlay_opened_ids:
+                st.session_state.duel_request_overlay_id = pending_id
+                st.session_state.duel_request_overlay_open = True
+                st.session_state.duel_request_overlay_opened_ids.append(pending_id)
+                break
+
+        if st.session_state.duel_request_overlay_open and st.session_state.duel_request_overlay_id:
+            render_duel_request_overlay(
+                st.session_state.duel_request_overlay_id,
+                duel_data,
+                profiles,
+                current_profile_key
             )
 
         current_active_ids = [
