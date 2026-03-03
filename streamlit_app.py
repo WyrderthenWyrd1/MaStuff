@@ -66,9 +66,9 @@ if 'show_chat' not in st.session_state:
     st.session_state.show_chat = False
 
 if 'chat_sort_order' not in st.session_state:
-    st.session_state.chat_sort_order = "Newest"
+    st.session_state.chat_sort_order = "Oldest"
 elif st.session_state.chat_sort_order not in ["Newest", "Oldest"]:
-    st.session_state.chat_sort_order = "Newest"
+    st.session_state.chat_sort_order = "Oldest"
 
 if 'selected_chat_profile_key' not in st.session_state:
     st.session_state.selected_chat_profile_key = ""
@@ -987,7 +987,7 @@ col1, col2 = st.columns([5, 1])
 with col2:
     if st.button("💬 Chat" if not st.session_state.show_chat else "✕ Close"):
         if not st.session_state.show_chat:
-            st.session_state.chat_sort_order = "Newest"
+            st.session_state.chat_sort_order = "Oldest"
         st.session_state.show_chat = not st.session_state.show_chat
         st.rerun()
 
