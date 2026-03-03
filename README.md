@@ -74,6 +74,11 @@ Deploy for **FREE** on Streamlit Community Cloud:
 
 The desktop version (`grade_calculator.py`) runs locally with a traditional GUI.
 
+Desktop app includes:
+- Adjustable GPA scale calculator (for example 4.0 or 5.0)
+- Per-class grade preview directly in the class list
+- AP checkbox per class that boosts weighted GPA scaling
+
 ### Requirements
 
 - Python 3.6 or higher (includes Tkinter by default)

@@ -16,6 +16,9 @@ class GradeCalculator:
         # Data structure to store all classes
         self.classes = {}  # {class_name: {categories: {cat_name: {weight: float, assignments: []}}}}
         self.current_class = None
+        self.class_order = []
+        self.gpa_scale_var = tk.DoubleVar(value=4.0)
+        self.ap_class_var = tk.BooleanVar(value=False)
         self.data_file = "grade_data.json"
         
         # Load existing data
@@ -54,6 +57,14 @@ class GradeCalculator:
         
         ttk.Button(class_btn_frame, text="Add Class", command=self.add_class).pack(side=tk.LEFT, padx=2)
         ttk.Button(class_btn_frame, text="Remove", command=self.remove_class).pack(side=tk.LEFT, padx=2)
+
+        self.ap_checkbox = ttk.Checkbutton(
+            left_frame,
+            text="Selected class is AP",
+            variable=self.ap_class_var,
+            command=self.toggle_ap_for_selected_class
+        )
+        self.ap_checkbox.pack(anchor=tk.W, pady=(6, 0))
         
         # Right panel - Categories and assignments
         right_frame = ttk.Frame(main_frame)
@@ -109,6 +120,26 @@ class GradeCalculator:
         
         self.grade_label = ttk.Label(grade_frame, text="No class selected", font=('Arial', 16, 'bold'))
         self.grade_label.pack()
+
+        gpa_controls = ttk.Frame(grade_frame)
+        gpa_controls.pack(fill=tk.X, pady=(8, 0))
+
+        ttk.Label(gpa_controls, text="GPA Scale:").pack(side=tk.LEFT)
+        self.gpa_scale_spinbox = tk.Spinbox(
+            gpa_controls,
+            from_=1.0,
+            to=10.0,
+            increment=0.1,
+            width=5,
+            textvariable=self.gpa_scale_var,
+            command=self.on_gpa_scale_change
+        )
+        self.gpa_scale_spinbox.pack(side=tk.LEFT, padx=(5, 0))
+        self.gpa_scale_spinbox.bind('<Return>', lambda e: self.on_gpa_scale_change())
+        self.gpa_scale_spinbox.bind('<FocusOut>', lambda e: self.on_gpa_scale_change())
+
+        self.gpa_label = ttk.Label(grade_frame, text="GPA: N/A")
+        self.gpa_label.pack(pady=(6, 0))
     
     def add_class(self):
         """Add a new class"""
@@ -118,13 +149,13 @@ class GradeCalculator:
                 messagebox.showwarning("Duplicate", "Class already exists!")
                 return
             
-            self.classes[class_name] = {'categories': {}}
+            self.classes[class_name] = {'categories': {}, 'is_ap': False}
             self.update_class_list()
             self.save_data()
             
             # Select the new class
             self.class_listbox.selection_clear(0, tk.END)
-            idx = list(self.classes.keys()).index(class_name)
+            idx = self.class_order.index(class_name)
             self.class_listbox.selection_set(idx)
             self.on_class_select(None)
     
@@ -146,14 +177,129 @@ class GradeCalculator:
         selection = self.class_listbox.curselection()
         if selection:
             idx = selection[0]
-            self.current_class = self.class_listbox.get(idx)
+            self.current_class = self.class_order[idx]
+            self.ap_class_var.set(bool(self.classes.get(self.current_class, {}).get('is_ap', False)))
             self.update_tree()
     
     def update_class_list(self):
         """Update the class listbox"""
+        selected_index = None
         self.class_listbox.delete(0, tk.END)
-        for class_name in sorted(self.classes.keys()):
-            self.class_listbox.insert(tk.END, class_name)
+        self.class_order = sorted(self.classes.keys())
+        for idx, class_name in enumerate(self.class_order):
+            overall, letter = self.calculate_overall_grade_for_class(class_name)
+            ap_tag = " [AP]" if self.classes.get(class_name, {}).get('is_ap', False) else ""
+            if overall is not None and letter is not None:
+                display_text = f"{class_name}{ap_tag} ({overall:.1f}% {letter})"
+            else:
+                display_text = f"{class_name}{ap_tag} (No grade)"
+            self.class_listbox.insert(tk.END, display_text)
+
+            if self.current_class == class_name:
+                selected_index = idx
+
+        if selected_index is not None:
+            self.class_listbox.selection_set(selected_index)
+
+        self.update_gpa_display()
+
+    def on_gpa_scale_change(self):
+        """Handle GPA scale input changes"""
+        self.update_gpa_display()
+
+    def toggle_ap_for_selected_class(self):
+        """Toggle AP flag for the currently selected class"""
+        if not self.current_class or self.current_class not in self.classes:
+            return
+
+        self.classes[self.current_class]['is_ap'] = bool(self.ap_class_var.get())
+        self.update_class_list()
+        self.update_gpa_display()
+        self.save_data()
+
+    def calculate_overall_grade_for_class(self, class_name):
+        """Calculate overall percentage and letter grade for one class"""
+        if class_name not in self.classes:
+            return None, None
+
+        categories = self.classes[class_name]['categories']
+        if not categories:
+            return None, None
+
+        total_weight = 0
+        weighted_grade = 0
+
+        for _, cat_data in categories.items():
+            weight = cat_data['weight']
+            assignments = cat_data['assignments']
+
+            if assignments:
+                total_possible = sum(a['total'] for a in assignments)
+                total_earned = sum(a['earned'] for a in assignments)
+                cat_percentage = (total_earned / total_possible * 100) if total_possible > 0 else 0
+                total_weight += weight
+                weighted_grade += cat_percentage * (weight / 100)
+
+        if total_weight > 0:
+            overall = weighted_grade / (total_weight / 100)
+            return overall, self.get_letter_grade(overall)
+
+        return None, None
+
+    def letter_to_base_points(self, letter):
+        """Convert letter grade to base 4.0 GPA points"""
+        points_map = {
+            'A': 4.0,
+            'A-': 3.7,
+            'B+': 3.3,
+            'B': 3.0,
+            'B-': 2.7,
+            'C+': 2.3,
+            'C': 2.0,
+            'C-': 1.7,
+            'D+': 1.3,
+            'D': 1.0,
+            'D-': 0.7,
+            'F': 0.0,
+        }
+        return points_map.get(letter, 0.0)
+
+    def calculate_gpa(self, scale_max):
+        """Calculate GPA across all classes using an adjustable maximum scale"""
+        class_points = []
+        ap_bonus_scaled = scale_max / 4.0
+
+        for class_name in self.classes.keys():
+            _, letter = self.calculate_overall_grade_for_class(class_name)
+            if letter is not None:
+                base_points = self.letter_to_base_points(letter)
+                adjusted_points = (base_points / 4.0) * scale_max
+                if self.classes.get(class_name, {}).get('is_ap', False):
+                    adjusted_points = min(scale_max, adjusted_points + ap_bonus_scaled)
+                class_points.append(adjusted_points)
+
+        if not class_points:
+            return None
+
+        return sum(class_points) / len(class_points)
+
+    def update_gpa_display(self):
+        """Refresh GPA display from current classes and selected scale"""
+        try:
+            scale_max = float(self.gpa_scale_var.get())
+        except (ValueError, tk.TclError):
+            self.gpa_label.config(text="GPA: Invalid scale")
+            return
+
+        if scale_max <= 0:
+            self.gpa_label.config(text="GPA: Invalid scale")
+            return
+
+        gpa_value = self.calculate_gpa(scale_max)
+        if gpa_value is None:
+            self.gpa_label.config(text=f"GPA: N/A / {scale_max:.1f}")
+        else:
+            self.gpa_label.config(text=f"GPA: {gpa_value:.2f} / {scale_max:.1f}")
     
     def add_category(self):
         """Add a new category to the current class"""
@@ -296,12 +442,14 @@ class GradeCalculator:
         
         if not self.current_class:
             self.grade_label.config(text="No class selected")
+            self.update_gpa_display()
             return
         
         categories = self.classes[self.current_class]['categories']
         
         if not categories:
             self.grade_label.config(text="No categories defined")
+            self.update_gpa_display()
             return
         
         total_weight = 0
@@ -342,9 +490,13 @@ class GradeCalculator:
             self.grade_label.config(text=f"{overall:.2f}% ({letter})")
         else:
             self.grade_label.config(text="No graded assignments")
+
+        self.update_class_list()
     
     def get_letter_grade(self, percentage):
         """Convert percentage to letter grade"""
+        if percentage >= 98:
+            return 'A+'
         if percentage >= 93:
             return 'A'
         elif percentage >= 90:
@@ -384,6 +536,14 @@ class GradeCalculator:
             try:
                 with open(self.data_file, 'r') as f:
                     self.classes = json.load(f)
+                if not isinstance(self.classes, dict):
+                    self.classes = {}
+                for class_name, class_data in self.classes.items():
+                    if not isinstance(class_data, dict):
+                        self.classes[class_name] = {'categories': {}, 'is_ap': False}
+                        continue
+                    class_data.setdefault('categories', {})
+                    class_data.setdefault('is_ap', False)
             except Exception as e:
                 messagebox.showerror("Load Error", f"Failed to load data: {str(e)}")
 

@@ -249,6 +249,42 @@ def calculate_overall_grade(class_name):
     
     return None, None
 
+
+def letter_to_base_points(letter):
+    """Convert letter grade to base 4.0 GPA points"""
+    points_map = {
+        'A': 4.0,
+        'A-': 3.7,
+        'B+': 3.3,
+        'B': 3.0,
+        'B-': 2.7,
+        'C+': 2.3,
+        'C': 2.0,
+        'C-': 1.7,
+        'D+': 1.3,
+        'D': 1.0,
+        'D-': 0.7,
+        'F': 0.0,
+    }
+    return points_map.get(letter, 0.0)
+
+
+def calculate_gpa(scale_max):
+    """Calculate GPA across all classes using an adjustable maximum scale"""
+    class_points = []
+
+    for class_name in st.session_state.classes.keys():
+        _, letter = calculate_overall_grade(class_name)
+        if letter is not None:
+            base_points = letter_to_base_points(letter)
+            adjusted_points = (base_points / 4.0) * scale_max
+            class_points.append(adjusted_points)
+
+    if not class_points:
+        return None
+
+    return sum(class_points) / len(class_points)
+
 # Main app
 st.title("Grade Calculator")
 
@@ -337,13 +373,37 @@ with st.sidebar:
     # List classes
     if st.session_state.profile_loaded and st.session_state.classes:
         st.subheader("Your Classes")
+
+        gpa_scale = st.number_input(
+            "GPA Scale",
+            min_value=1.0,
+            max_value=10.0,
+            value=4.0,
+            step=0.1,
+            help="Adjust the maximum GPA scale (for example, 4.0 or 5.0)",
+            key="gpa_scale_input"
+        )
+
+        gpa_value = calculate_gpa(gpa_scale)
+        if gpa_value is not None:
+            st.metric("GPA", f"{gpa_value:.2f} / {gpa_scale:.1f}")
+        else:
+            st.caption("GPA: No graded classes yet")
+
         for class_name in sorted(st.session_state.classes.keys()):
-            col1, col2 = st.columns([3, 1])
+            overall, letter = calculate_overall_grade(class_name)
+            grade_text = "No grade"
+            if overall is not None and letter is not None:
+                grade_text = f"{overall:.1f}% ({letter})"
+
+            col1, col2, col3 = st.columns([3, 2, 1])
             with col1:
                 if st.button(class_name, key=f"class_{class_name}", use_container_width=True):
                     st.session_state.current_class = class_name
                     st.rerun()
             with col2:
+                st.caption(grade_text)
+            with col3:
                 if st.button("Delete", key=f"del_class_{class_name}"):
                     del st.session_state.classes[class_name]
                     if st.session_state.current_class == class_name:
