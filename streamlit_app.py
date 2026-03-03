@@ -1,6 +1,8 @@
 import streamlit as st
 import json
 import os
+import re
+import hashlib
 from typing import Dict, List
 
 # Page configuration
@@ -10,27 +12,93 @@ st.set_page_config(
     layout="wide"
 )
 
-# Data file location
-DATA_FILE = "grade_data.json"
+# Per-profile data location
+DATA_DIR = "user_data"
+PROFILES_FILE = os.path.join(DATA_DIR, "profiles.json")
+os.makedirs(DATA_DIR, exist_ok=True)
 
 # Initialize session state
 if 'classes' not in st.session_state:
     st.session_state.classes = {}
-    # Load existing data
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, 'r') as f:
-                st.session_state.classes = json.load(f)
-        except Exception as e:
-            st.error(f"Failed to load data: {str(e)}")
 
 if 'current_class' not in st.session_state:
     st.session_state.current_class = None
 
-def save_data():
-    """Save data to JSON file"""
+if 'profile_name' not in st.session_state:
+    st.session_state.profile_name = ""
+
+if 'profile_key' not in st.session_state:
+    st.session_state.profile_key = ""
+
+if 'profile_loaded' not in st.session_state:
+    st.session_state.profile_loaded = False
+
+if 'last_loaded_profile' not in st.session_state:
+    st.session_state.last_loaded_profile = ""
+
+
+def sanitize_profile_key(profile_name):
+    """Create a safe file key from a profile name"""
+    cleaned = re.sub(r'[^a-zA-Z0-9_-]+', '_', profile_name.strip().lower())
+    return cleaned.strip('_')
+
+
+def get_profile_data_file(profile_key):
+    """Get data filename for a profile"""
+    return os.path.join(DATA_DIR, f"{profile_key}.json")
+
+
+def hash_pin(pin):
+    """Hash a 4-digit PIN"""
+    return hashlib.sha256(pin.encode("utf-8")).hexdigest()
+
+
+def load_profiles():
+    """Load profile PIN metadata"""
+    if os.path.exists(PROFILES_FILE):
+        try:
+            with open(PROFILES_FILE, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception as e:
+            st.error(f"Failed to load profiles: {str(e)}")
+    return {}
+
+
+def save_profiles(profiles):
+    """Save profile PIN metadata"""
     try:
-        with open(DATA_FILE, 'w') as f:
+        with open(PROFILES_FILE, 'w') as f:
+            json.dump(profiles, f, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"Failed to save profiles: {str(e)}")
+        return False
+
+
+def load_profile_data(profile_key):
+    """Load classes for a specific profile"""
+    data_file = get_profile_data_file(profile_key)
+    if os.path.exists(data_file):
+        try:
+            with open(data_file, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception as e:
+            st.error(f"Failed to load profile data: {str(e)}")
+    return {}
+
+def save_data():
+    """Save data to the current profile JSON file"""
+    if not st.session_state.profile_key:
+        st.error("Please load a profile first.")
+        return False
+
+    try:
+        data_file = get_profile_data_file(st.session_state.profile_key)
+        with open(data_file, 'w') as f:
             json.dump(st.session_state.classes, f, indent=2)
         return True
     except Exception as e:
@@ -105,28 +173,96 @@ st.title("📚 Grade Calculator")
 
 # Sidebar for class management
 with st.sidebar:
+    st.header("Profile")
+
+    profile_input = st.text_input(
+        "Profile Name",
+        value=st.session_state.profile_name,
+        key="profile_name_input",
+        placeholder="e.g., seb"
+    )
+
+    pin_input = st.text_input(
+        "4-digit PIN",
+        type="password",
+        max_chars=4,
+        key="profile_pin_input",
+        placeholder="1234"
+    )
+
+    st.caption("New profile: set a PIN. Existing profile: enter its PIN.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Load Profile", use_container_width=True):
+            profile_key = sanitize_profile_key(profile_input)
+            if not profile_key:
+                st.warning("Enter a valid profile name.")
+            elif not re.fullmatch(r"\d{4}", pin_input.strip()):
+                st.warning("PIN must be exactly 4 numbers.")
+            else:
+                pin_value = pin_input.strip()
+                profiles = load_profiles()
+
+                if profile_key in profiles:
+                    saved_hash = profiles[profile_key].get('pin_hash', '')
+                    if saved_hash != hash_pin(pin_value):
+                        st.error("Incorrect PIN for this profile.")
+                        st.stop()
+                else:
+                    profiles[profile_key] = {
+                        'name': profile_input.strip(),
+                        'pin_hash': hash_pin(pin_value)
+                    }
+                    if not save_profiles(profiles):
+                        st.stop()
+
+                st.session_state.profile_name = profile_input.strip()
+                st.session_state.profile_key = profile_key
+                st.session_state.classes = load_profile_data(profile_key)
+                st.session_state.current_class = None
+                st.session_state.profile_loaded = True
+                st.session_state.last_loaded_profile = profile_input.strip()
+                st.success(f"Loaded profile: {st.session_state.profile_name}")
+                st.rerun()
+    with col2:
+        if st.button("Sign Out", use_container_width=True):
+            st.session_state.profile_name = ""
+            st.session_state.profile_key = ""
+            st.session_state.profile_loaded = False
+            st.session_state.classes = {}
+            st.session_state.current_class = None
+            st.rerun()
+
+    if st.session_state.profile_loaded:
+        st.caption(f"Current profile: {st.session_state.profile_name}")
+    else:
+        st.info("Load your profile to keep your own saved data.")
+
+    st.divider()
     st.header("Classes")
     
-    # Add new class
-    with st.expander("➕ Add New Class"):
-        new_class = st.text_input("Class Name", key="new_class_input")
-        if st.button("Add Class"):
-            if new_class:
-                if new_class in st.session_state.classes:
-                    st.error("Class already exists!")
+    if st.session_state.profile_loaded:
+        # Add new class
+        with st.expander("➕ Add New Class"):
+            new_class = st.text_input("Class Name", key="new_class_input")
+            if st.button("Add Class"):
+                if new_class:
+                    if new_class in st.session_state.classes:
+                        st.error("Class already exists!")
+                    else:
+                        st.session_state.classes[new_class] = {
+                            'categories': {}
+                        }
+                        st.session_state.current_class = new_class
+                        if save_data():
+                            st.success(f"Added {new_class}!")
+                            st.rerun()
                 else:
-                    st.session_state.classes[new_class] = {
-                        'categories': {}
-                    }
-                    st.session_state.current_class = new_class
-                    if save_data():
-                        st.success(f"Added {new_class}!")
-                        st.rerun()
-            else:
-                st.warning("Please enter a class name")
+                    st.warning("Please enter a class name")
     
     # List classes
-    if st.session_state.classes:
+    if st.session_state.profile_loaded and st.session_state.classes:
         st.subheader("Your Classes")
         for class_name in sorted(st.session_state.classes.keys()):
             col1, col2 = st.columns([3, 1])
@@ -141,11 +277,13 @@ with st.sidebar:
                         st.session_state.current_class = None
                     save_data()
                     st.rerun()
-    else:
+    elif st.session_state.profile_loaded:
         st.info("No classes yet. Add one above!")
 
 # Main content area
-if st.session_state.current_class:
+if not st.session_state.profile_loaded:
+    st.info("👈 Load your profile in the sidebar to access your own saved data.")
+elif st.session_state.current_class:
     class_name = st.session_state.current_class
     st.header(f"{class_name}")
     
