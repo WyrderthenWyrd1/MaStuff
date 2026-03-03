@@ -71,10 +71,7 @@ def load_chat_messages():
 
 
 def get_mean_ai_response(user_message):
-    """Generate a mean AI response using OpenAI"""
-    import random
-    
-    # Try to use OpenAI API if available
+    """Generate a sassy AI response using OpenAI (returns None if API not available)"""
     try:
         import openai
         
@@ -91,123 +88,19 @@ def get_mean_ai_response(user_message):
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are a brutally honest, sarcastic chatbot. Respond to messages with short, mean, snarky comments (5-7 words max). Be rude, dismissive, and roast people. Never be helpful or nice. Keep it short and cutting."},
+                    {"role": "system", "content": "You are a sassy, witty chatbot with a dry sense of humor. Respond to messages with short but complete sentences (10-15 words). Be a bit sarcastic and playfully critical, but not genuinely mean. Think of it as friendly roasting - you're teasing, not trying to hurt feelings. Be clever and amusing."},
                     {"role": "user", "content": user_message}
                 ],
-                max_tokens=20,
-                temperature=0.9
+                max_tokens=30,
+                temperature=0.8
             )
             
             return response.choices[0].message.content.strip()
     except Exception:
         pass
     
-    # Fallback to hardcoded responses if API fails
-    msg_lower = user_message.lower()
-    
-    # Grade/percentages mentioned
-    if any(char.isdigit() for char in user_message) and any(word in msg_lower for word in ['%', 'percent', 'grade', 'score']):
-        if any(word in user_message for word in ['100', '99', '98', '97', '96', '95', 'A']):
-            return "Bet you still failed personality"
-        elif any(word in user_message for word in ['90', '91', '92', '93', '94']):
-            return "Mid grades for mid people"
-        elif any(word in user_message for word in ['80', '81', '82', '83', '84', '85', '86', '87', '88', '89', 'B']):
-            return "B stands for barely trying"
-        elif any(word in user_message for word in ['70', '71', '72', '73', '74', '75', '76', '77', '78', '79', 'C']):
-            return "That's embarrassing honestly"
-        else:
-            return "Yikes that's actually sad"
-    
-    # Questions
-    if '?' in user_message:
-        responses = [
-            "Why would I know that",
-            "Google it like everyone else",
-            "Not my problem honestly",
-            "Ask someone who cares",
-            "Figure it out yourself kid"
-        ]
-        return random.choice(responses)
-    
-    # Greetings
-    if any(word in msg_lower for word in ['hi', 'hello', 'hey', 'sup', 'yo']):
-        responses = [
-            "Nobody asked you to speak",
-            "Did I say hi back",
-            "Great another person here",
-            "Talking to yourself again?",
-            "Nobody cares that you're here"
-        ]
-        return random.choice(responses)
-    
-    # Thanks/gratitude
-    if any(word in msg_lower for word in ['thanks', 'thank', 'thx']):
-        responses = [
-            "Whatever helps you sleep",
-            "I literally did nothing",
-            "Still don't care about you",
-            "Don't mention it ever again"
-        ]
-        return random.choice(responses)
-    
-    # School/homework related
-    if any(word in msg_lower for word in ['test', 'exam', 'homework', 'assignment', 'project', 'essay', 'study']):
-        responses = [
-            "Should've started earlier honestly",
-            "That's your problem not mine",
-            "Maybe try harder next time",
-            "Sounds like a you problem",
-            "Nobody cares about your work"
-        ]
-        return random.choice(responses)
-    
-    # Teachers/professors
-    if any(word in msg_lower for word in ['teacher', 'professor', 'prof', 'instructor']):
-        responses = [
-            "They probably hate you too",
-            "Bet they remember your name wrong",
-            "That's why you're failing obviously",
-            "They're just doing their job"
-        ]
-        return random.choice(responses)
-    
-    # Complaining/negative
-    if any(word in msg_lower for word in ['hate', 'sucks', 'worst', 'terrible', 'awful', 'annoying', 'ugh', 'bad']):
-        responses = [
-            "Cry about it more please",
-            "Nobody asked for your opinion",
-            "Your whole life is like that",
-            "Get over it honestly",
-            "That's just skill issue vibes"
-        ]
-        return random.choice(responses)
-    
-    # Excited/positive
-    if any(word in msg_lower for word in ['!', 'great', 'awesome', 'amazing', 'love', 'good', 'nice', 'yay', 'yes']):
-        responses = [
-            "Nobody shares your excitement",
-            "Cool story tell someone else",
-            "That's embarrassing for you",
-            "Literally nobody asked",
-            "Cringe post delete this"
-        ]
-        return random.choice(responses)
-    
-    # Default mean responses that relate to anything
-    responses = [
-        "That's the dumbest take ever",
-        "Why did you type that",
-        "Delete this right now",
-        "Nobody wanted to hear that",
-        "This ain't it chief",
-        "What a waste of characters",
-        "Embarrassing post honestly",
-        "Not your best moment clearly",
-        "Try thinking before typing",
-        "That was completely unnecessary"
-    ]
-    
-    return random.choice(responses)
+    # Return None if API is not available
+    return None
 
 
 def save_chat_message(username, message, is_bot=False):
@@ -621,12 +514,13 @@ if st.session_state.show_chat:
             username = st.session_state.profile_name if st.session_state.profile_loaded else "Anonymous"
             save_chat_message(username, new_message, is_bot=False)
             
-            # AI bot butts in randomly (65% chance)
+            # AI bot butts in randomly (65% chance) - only if API is available
             if random.random() < 0.65:
                 import time
                 time.sleep(0.1)  # Small delay for realism
                 ai_response = get_mean_ai_response(new_message)
-                save_chat_message("Bot", ai_response, is_bot=True)
+                if ai_response is not None:
+                    save_chat_message("Bot", ai_response, is_bot=True)
             
             st.rerun()
 
