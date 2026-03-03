@@ -120,6 +120,39 @@ def save_chat_message(username, message):
         return False
 
 
+def update_chat_display_name_for_profile(profile_key, new_display_name, login_name, previous_display_name):
+    """Update past chat messages for a profile when display name changes"""
+    try:
+        messages = load_chat_messages()
+        if not messages:
+            return 0
+
+        old_names = {str(login_name).strip(), str(previous_display_name).strip()}
+        old_names = {name for name in old_names if name}
+
+        updated_count = 0
+        for msg in messages:
+            msg_profile_key = str(msg.get('profile_key', '')).strip()
+            msg_user = str(msg.get('user', '')).strip()
+
+            belongs_to_profile = msg_profile_key == profile_key
+            likely_legacy_message = (not msg_profile_key) and (msg_user in old_names)
+
+            if belongs_to_profile or likely_legacy_message:
+                if msg_user != new_display_name or msg_profile_key != profile_key:
+                    msg['user'] = new_display_name
+                    msg['profile_key'] = profile_key
+                    updated_count += 1
+
+        if updated_count > 0:
+            with open(CHAT_FILE, 'w') as f:
+                json.dump(messages[-50:], f, indent=2)
+
+        return updated_count
+    except Exception:
+        return 0
+
+
 def load_profiles():
     """Load profile PIN metadata"""
     if os.path.exists(PROFILES_FILE):
@@ -375,7 +408,7 @@ with st.sidebar:
         current_profile = profiles.get(st.session_state.profile_key, {})
         current_display_name = current_profile.get('display_name', st.session_state.profile_name)
         current_name_color = current_profile.get('name_color', '#4F8BF9')
-        current_avatar_emoji = current_profile.get('avatar_emoji', '🙂')
+        current_avatar_emoji = current_profile.get('avatar_emoji', '😎')
 
         with st.expander("Chat Profile"):
             selected_display_name = st.text_input(
@@ -426,6 +459,7 @@ with st.sidebar:
                         st.stop()
 
                     profile_data = profiles.get(st.session_state.profile_key, {})
+                    previous_display_name = profile_data.get('display_name', st.session_state.display_name or st.session_state.profile_name)
                     profile_data['name'] = st.session_state.profile_name
                     profile_data['pin_hash'] = profile_data.get('pin_hash', '')
                     profile_data['display_name'] = cleaned_display_name
@@ -437,8 +471,19 @@ with st.sidebar:
                         profile_data.setdefault('avatar_image_b64', '')
                     profiles[st.session_state.profile_key] = profile_data
                     save_profiles(profiles)
+
+                    updated_messages = update_chat_display_name_for_profile(
+                        st.session_state.profile_key,
+                        cleaned_display_name,
+                        st.session_state.profile_name,
+                        previous_display_name
+                    )
+
                     st.session_state.display_name = cleaned_display_name
-                    st.success("Chat profile updated")
+                    if updated_messages > 0:
+                        st.success(f"Chat profile updated ({updated_messages} old messages renamed)")
+                    else:
+                        st.success("Chat profile updated")
             with col_b:
                 if st.button("Remove Picture", use_container_width=True):
                     profile_data = profiles.get(st.session_state.profile_key, {})
