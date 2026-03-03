@@ -70,14 +70,73 @@ def load_chat_messages():
     return []
 
 
-def save_chat_message(username, message):
+def get_mean_ai_response(user_message):
+    """Generate a mean AI response (around 5 words)"""
+    import random
+    
+    # Check for keywords to give specific mean responses
+    msg_lower = user_message.lower()
+    
+    if any(word in msg_lower for word in ['hi', 'hello', 'hey']):
+        responses = [
+            "Nobody asked you here",
+            "Wow, how incredibly original",
+            "Great, another person talking",
+            "Did I ask though"
+        ]
+    elif any(word in msg_lower for word in ['help', 'question', '?']):
+        responses = [
+            "Figure it out yourself",
+            "Not my problem honestly",
+            "Google exists for a reason",
+            "Why are you like this"
+        ]
+    elif any(word in msg_lower for word in ['thanks', 'thank']):
+        responses = [
+            "Whatever helps you sleep tonight",
+            "I literally did nothing",
+            "You're still annoying me",
+            "Don't mention it. Ever."
+        ]
+    elif any(word in msg_lower for word in ['grade', 'test', 'exam', 'homework']):
+        responses = [
+            "Maybe try studying next time",
+            "Your grades aren't my problem",
+            "Should've worked harder honestly",
+            "That's embarrassing for you"
+        ]
+    else:
+        # General mean responses
+        responses = [
+            "Nobody cares about this",
+            "That's the dumbest thing ever",
+            "Why even bother typing that",
+            "Cool story, tell someone else",
+            "Literally no one asked you",
+            "This ain't it chief",
+            "Try harder next time maybe",
+            "Embarrassing post honestly",
+            "Delete this immediately please",
+            "Yikes, that's rough buddy",
+            "Not impressed by this honestly",
+            "Did you think before typing",
+            "What a waste of bandwidth",
+            "I've seen better from toddlers",
+            "This is why nobody texts"
+        ]
+    
+    return random.choice(responses)
+
+
+def save_chat_message(username, message, is_bot=False):
     """Save a new chat message"""
     try:
         messages = load_chat_messages()
         messages.append({
             'user': username,
             'message': message,
-            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M")
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M"),
+            'is_bot': is_bot
         })
         # Keep only last 50 messages
         messages = messages[-50:]
@@ -462,7 +521,10 @@ if st.session_state.show_chat:
         chat_container = st.container()
         with chat_container:
             for msg in messages[-20:]:
-                st.text(f"{msg['timestamp']} - {msg['user']}: {msg['message']}")
+                user_display = msg['user']
+                if msg.get('is_bot', False):
+                    user_display = "🤖 Bot"
+                st.text(f"{msg['timestamp']} - {user_display}: {msg['message']}")
     
     # Input for new message
     with st.form("chat_form", clear_on_submit=True):
@@ -474,7 +536,14 @@ if st.session_state.show_chat:
         
         if submitted and new_message:
             username = st.session_state.profile_name if st.session_state.profile_loaded else "Anonymous"
-            save_chat_message(username, new_message)
+            save_chat_message(username, new_message, is_bot=False)
+            
+            # AI bot responds with a mean comment
+            import time
+            time.sleep(0.1)  # Small delay for realism
+            ai_response = get_mean_ai_response(new_message)
+            save_chat_message("Bot", ai_response, is_bot=True)
+            
             st.rerun()
 
 # Footer
