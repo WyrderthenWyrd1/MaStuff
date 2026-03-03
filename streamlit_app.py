@@ -81,6 +81,15 @@ if 'selected_chat_profile_key' not in st.session_state:
 if 'selected_chat_profile_name' not in st.session_state:
     st.session_state.selected_chat_profile_name = ""
 
+if 'duel_overlay_open' not in st.session_state:
+    st.session_state.duel_overlay_open = False
+
+if 'duel_overlay_id' not in st.session_state:
+    st.session_state.duel_overlay_id = ""
+
+if 'duel_overlay_opened_ids' not in st.session_state:
+    st.session_state.duel_overlay_opened_ids = []
+
 
 def sanitize_profile_key(profile_name):
     """Create a safe file key from a profile name"""
@@ -336,7 +345,78 @@ def handle_duel_query_action(duel_data, current_profile_key):
     st.query_params.clear()
     if changed:
         save_duels(duel_data)
+        if action == "accept":
+            st.session_state.duel_overlay_id = duel_id
+            st.session_state.duel_overlay_open = True
     st.rerun()
+
+
+def handle_profile_query_action():
+    """Handle profile-open link clicks from chat username"""
+    profile_key = get_query_param_value("view_profile")
+    profile_name = get_query_param_value("view_name")
+    if not profile_key:
+        return
+
+    st.session_state.selected_chat_profile_key = profile_key
+    st.session_state.selected_chat_profile_name = profile_name or profile_key
+    st.query_params.clear()
+    st.rerun()
+
+
+def render_duel_game_overlay(duel_id, duel_data, profiles, current_profile_key):
+    """Render duel game in an overlay dialog"""
+    if not hasattr(st, 'dialog'):
+        return
+
+    @st.dialog("Duel")
+    def duel_dialog():
+        duel = next((item for item in duel_data if item.get('id') == duel_id), None)
+        if not duel or duel.get('status') != 'active':
+            st.caption("This duel is no longer active.")
+            if st.button("Close", key=f"close_inactive_duel_{duel_id}", use_container_width=True):
+                st.session_state.duel_overlay_open = False
+                st.rerun()
+            return
+
+        challenger_key = duel.get('challenger_key', '')
+        challenged_key = duel.get('challenged_key', '')
+        challenger_name = get_profile_display_name(challenger_key, profiles)
+        challenged_name = get_profile_display_name(challenged_key, profiles)
+        seconds_left = get_duel_seconds_left(duel)
+
+        st.write(f"{challenger_name} vs {challenged_name}")
+        st.caption(f"Time left: {seconds_left}s")
+
+        if current_profile_key == challenger_key:
+            your_move = duel.get('challenger_move')
+            your_field = 'challenger_move'
+        else:
+            your_move = duel.get('challenged_move')
+            your_field = 'challenged_move'
+
+        if your_move:
+            st.caption(f"Your move is locked: {your_move}. Waiting for opponent...")
+        else:
+            move_choice = st.radio(
+                "Choose your move",
+                options=['Rock', 'Paper', 'Scissors'],
+                key=f"overlay_move_choice_{duel_id}",
+                horizontal=True
+            )
+            if st.button("Submit Move", key=f"overlay_submit_move_{duel_id}", use_container_width=True):
+                duel[your_field] = move_choice
+                save_duels(duel_data)
+                if resolve_due_duels_and_announce(duel_data, profiles):
+                    save_duels(duel_data)
+                st.session_state.duel_overlay_open = False
+                st.rerun()
+
+        if st.button("Minimize", key=f"overlay_minimize_{duel_id}", use_container_width=True):
+            st.session_state.duel_overlay_open = False
+            st.rerun()
+
+    duel_dialog()
 
 
 def resolve_due_duels_and_announce(duels, profiles):
@@ -1116,6 +1196,7 @@ if st.session_state.show_chat:
         messages = load_chat_messages()
 
     current_profile_key = st.session_state.profile_key if st.session_state.profile_loaded else ""
+    handle_profile_query_action()
     if current_profile_key:
         handle_duel_query_action(duel_data, current_profile_key)
 
@@ -1206,31 +1287,15 @@ if st.session_state.show_chat:
                     challenger_name = get_profile_display_name(challenger_key, profiles)
                     challenged_name = get_profile_display_name(challenged_key, profiles)
 
-                    if current_profile_key == challenger_key:
-                        your_move = duel.get('challenger_move')
-                        your_field = 'challenger_move'
-                    else:
-                        your_move = duel.get('challenged_move')
-                        your_field = 'challenged_move'
-
                     st.write(f"{challenger_name} vs {challenged_name}")
                     seconds_left = get_duel_seconds_left(duel)
                     st.caption(f"Time left: {seconds_left}s")
-                    if your_move:
-                        st.caption(f"Your move is locked: {your_move}. Waiting for opponent...")
-                    else:
-                        move_choice = st.radio(
-                            "Choose your move",
-                            options=['Rock', 'Paper', 'Scissors'],
-                            key=f"move_choice_{duel['id']}",
-                            horizontal=True
-                        )
-                        if st.button("Submit Move", key=f"submit_move_{duel['id']}", use_container_width=True):
-                            duel[your_field] = move_choice
-                            save_duels(duel_data)
-                            if resolve_due_duels_and_announce(duel_data, profiles):
-                                save_duels(duel_data)
-                            st.rerun()
+                    if st.button("Open Duel", key=f"open_duel_overlay_{duel['id']}", use_container_width=True):
+                        st.session_state.duel_overlay_id = duel['id']
+                        st.session_state.duel_overlay_open = True
+                        if duel['id'] not in st.session_state.duel_overlay_opened_ids:
+                            st.session_state.duel_overlay_opened_ids.append(duel['id'])
+                        st.rerun()
 
     if st.session_state.profile_loaded and current_profile_key:
         if incoming_pending:
@@ -1256,6 +1321,31 @@ if st.session_state.show_chat:
             render_duel_popup_html(
                 "Duel Sent",
                 f"Waiting for {challenged_name}. Expires in {seconds_left}s."
+            )
+
+        current_active_ids = [
+            duel.get('id') for duel in duel_data
+            if duel.get('status') == 'active' and current_profile_key in {duel.get('challenger_key'), duel.get('challenged_key')}
+        ]
+
+        st.session_state.duel_overlay_opened_ids = [
+            duel_id for duel_id in st.session_state.duel_overlay_opened_ids
+            if duel_id in current_active_ids
+        ]
+
+        for active_id in current_active_ids:
+            if active_id not in st.session_state.duel_overlay_opened_ids:
+                st.session_state.duel_overlay_id = active_id
+                st.session_state.duel_overlay_open = True
+                st.session_state.duel_overlay_opened_ids.append(active_id)
+                break
+
+        if st.session_state.duel_overlay_open and st.session_state.duel_overlay_id:
+            render_duel_game_overlay(
+                st.session_state.duel_overlay_id,
+                duel_data,
+                profiles,
+                current_profile_key
             )
 
     if st.session_state.selected_chat_profile_key:
@@ -1331,13 +1421,12 @@ if st.session_state.show_chat:
                     bubble_type = "user"
                 bubble_avatar = get_avatar_for_chat(profile_style)
                 safe_user_name = html.escape(msg['user'])
+                safe_profile_key = html.escape(message_profile_key)
                 with st.chat_message(bubble_type, avatar=bubble_avatar):
-                    if st.button(msg['user'], key=f"view_user_{idx}_{message_profile_key}"):
-                        st.session_state.selected_chat_profile_key = message_profile_key
-                        st.session_state.selected_chat_profile_name = msg['user']
-                        st.rerun()
                     st.markdown(
-                        f"<span style='font-weight:700; color:{profile_style['name_color']};'>{safe_user_name}</span>",
+                        f"<a href='?view_profile={safe_profile_key}&view_name={safe_user_name}' "
+                        f"style='font-weight:700; color:{profile_style['name_color']}; text-decoration:none;'>"
+                        f"{safe_user_name}</a>",
                         unsafe_allow_html=True
                     )
                     st.write(msg['message'])
