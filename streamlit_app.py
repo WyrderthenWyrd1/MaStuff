@@ -190,7 +190,7 @@ def get_letter_grade(percentage):
     elif percentage >= 60:
         return 'D-'
     else:
-        return 'F'
+        return 'YOU FUCKING FAILED, LOSER!'
 
 def calculate_category_grade(assignments):
     """Calculate grade for a category"""
