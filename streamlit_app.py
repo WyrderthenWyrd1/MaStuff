@@ -36,6 +36,7 @@ st.markdown(
 DATA_DIR = "user_data"
 PROFILES_FILE = os.path.join(DATA_DIR, "profiles.json")
 CHAT_FILE = os.path.join(DATA_DIR, "chat.json")
+DUELS_FILE = os.path.join(DATA_DIR, "duels.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # Initialize session state
@@ -148,6 +149,124 @@ def save_chat_message(username, message):
         return True
     except Exception:
         return False
+
+
+def save_system_chat_message(message):
+    """Save a system message to chat"""
+    try:
+        messages = load_chat_messages()
+        messages.append({
+            'user': 'System',
+            'message': message,
+            'profile_key': ''
+        })
+        messages = messages[-50:]
+        with open(CHAT_FILE, 'w') as f:
+            json.dump(messages, f, indent=2)
+        return True
+    except Exception:
+        return False
+
+
+def load_duels():
+    """Load duel data"""
+    if os.path.exists(DUELS_FILE):
+        try:
+            with open(DUELS_FILE, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    normalized = []
+                    for duel in data:
+                        if not isinstance(duel, dict):
+                            continue
+                        if not duel.get('id'):
+                            continue
+                        normalized.append({
+                            'id': str(duel.get('id')),
+                            'challenger_key': str(duel.get('challenger_key', '')),
+                            'challenged_key': str(duel.get('challenged_key', '')),
+                            'status': str(duel.get('status', 'pending')),
+                            'challenger_move': duel.get('challenger_move'),
+                            'challenged_move': duel.get('challenged_move'),
+                            'created_at': str(duel.get('created_at', datetime.now().isoformat())),
+                            'announced': bool(duel.get('announced', False))
+                        })
+                    return normalized[-200:]
+        except Exception:
+            pass
+    return []
+
+
+def save_duels(duels):
+    """Save duel data"""
+    try:
+        with open(DUELS_FILE, 'w') as f:
+            json.dump(duels[-200:], f, indent=2)
+        return True
+    except Exception:
+        return False
+
+
+def get_profile_display_name(profile_key, profiles):
+    profile = profiles.get(profile_key, {}) if isinstance(profiles, dict) else {}
+    return profile.get('display_name') or profile.get('name') or profile_key
+
+
+def determine_rps_winner(challenger_move, challenged_move):
+    """Return winner side: challenger, challenged, tie"""
+    if challenger_move == challenged_move:
+        return 'tie'
+
+    win_map = {
+        'Rock': 'Scissors',
+        'Paper': 'Rock',
+        'Scissors': 'Paper'
+    }
+    if win_map.get(challenger_move) == challenged_move:
+        return 'challenger'
+    return 'challenged'
+
+
+def resolve_due_duels_and_announce(duels, profiles):
+    """Resolve completed duel moves and announce winner in chat"""
+    changed = False
+    for duel in duels:
+        if duel.get('status') != 'active':
+            continue
+
+        challenger_move = duel.get('challenger_move')
+        challenged_move = duel.get('challenged_move')
+        if not challenger_move or not challenged_move:
+            continue
+
+        winner_side = determine_rps_winner(challenger_move, challenged_move)
+        challenger_name = get_profile_display_name(duel.get('challenger_key', ''), profiles)
+        challenged_name = get_profile_display_name(duel.get('challenged_key', ''), profiles)
+
+        if winner_side == 'tie':
+            result_message = (
+                f"⚔️ Duel Result: {challenger_name} ({challenger_move}) vs "
+                f"{challenged_name} ({challenged_move}) ended in a tie!"
+            )
+        elif winner_side == 'challenger':
+            result_message = (
+                f"🏆 Duel Winner: {challenger_name}! "
+                f"({challenger_move} beats {challenged_name}'s {challenged_move})"
+            )
+        else:
+            result_message = (
+                f"🏆 Duel Winner: {challenged_name}! "
+                f"({challenged_move} beats {challenger_name}'s {challenger_move})"
+            )
+
+        if not duel.get('announced', False):
+            save_system_chat_message(result_message)
+            duel['announced'] = True
+
+        duel['status'] = 'completed'
+        changed = True
+
+    return changed
 
 
 def update_chat_display_name_for_profile(profile_key, new_display_name, login_name, previous_display_name):
@@ -843,10 +962,117 @@ if st.session_state.show_chat:
     if profiles_changed:
         save_profiles(profiles)
 
+    duel_data = load_duels()
+    if resolve_due_duels_and_announce(duel_data, profiles):
+        save_duels(duel_data)
+        messages = load_chat_messages()
+
     current_profile_key = st.session_state.profile_key if st.session_state.profile_loaded else ""
     blocked_profiles = set()
     if current_profile_key and current_profile_key in profiles:
         blocked_profiles = set(profiles[current_profile_key].get('blocked_profiles', []))
+
+    if st.session_state.profile_loaded and current_profile_key:
+        with st.expander("⚔️ Duel Arena"):
+            other_profile_keys = [
+                key for key in sorted(profiles.keys())
+                if key != current_profile_key
+            ]
+
+            st.caption("Mini-game: Rock • Paper • Scissors")
+            if other_profile_keys:
+                opponent_key = st.selectbox(
+                    "Challenge User",
+                    options=other_profile_keys,
+                    format_func=lambda key: get_profile_display_name(key, profiles),
+                    key="duel_opponent_select"
+                )
+                if st.button("Send Duel Challenge", key="send_duel_challenge", use_container_width=True):
+                    has_existing = any(
+                        duel.get('status') in {'pending', 'active'} and
+                        {duel.get('challenger_key'), duel.get('challenged_key')} == {current_profile_key, opponent_key}
+                        for duel in duel_data
+                    )
+                    if has_existing:
+                        st.warning("A pending or active duel with this user already exists")
+                    else:
+                        duel_data.append({
+                            'id': f"duel_{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+                            'challenger_key': current_profile_key,
+                            'challenged_key': opponent_key,
+                            'status': 'pending',
+                            'challenger_move': None,
+                            'challenged_move': None,
+                            'created_at': datetime.now().isoformat(),
+                            'announced': False
+                        })
+                        save_duels(duel_data)
+                        challenger_name = get_profile_display_name(current_profile_key, profiles)
+                        opponent_name = get_profile_display_name(opponent_key, profiles)
+                        save_system_chat_message(f"⚔️ {challenger_name} challenged {opponent_name} to a duel!")
+                        st.success("Challenge sent")
+                        st.rerun()
+            else:
+                st.caption("No other users available to challenge")
+
+            incoming_challenges = [
+                duel for duel in duel_data
+                if duel.get('status') == 'pending' and duel.get('challenged_key') == current_profile_key
+            ]
+            if incoming_challenges:
+                st.markdown("**Incoming Challenges**")
+                for duel in incoming_challenges:
+                    challenger_name = get_profile_display_name(duel.get('challenger_key', ''), profiles)
+                    row1, row2 = st.columns(2)
+                    with row1:
+                        if st.button(f"Accept {challenger_name}", key=f"accept_duel_{duel['id']}", use_container_width=True):
+                            duel['status'] = 'active'
+                            save_duels(duel_data)
+                            save_system_chat_message(f"⚔️ {get_profile_display_name(current_profile_key, profiles)} accepted {challenger_name}'s duel!")
+                            st.rerun()
+                    with row2:
+                        if st.button(f"Decline {challenger_name}", key=f"decline_duel_{duel['id']}", use_container_width=True):
+                            duel['status'] = 'declined'
+                            save_duels(duel_data)
+                            save_system_chat_message(f"⚔️ {get_profile_display_name(current_profile_key, profiles)} declined {challenger_name}'s duel.")
+                            st.rerun()
+
+            active_duels = [
+                duel for duel in duel_data
+                if duel.get('status') == 'active' and
+                current_profile_key in {duel.get('challenger_key'), duel.get('challenged_key')}
+            ]
+            if active_duels:
+                st.markdown("**Active Duels**")
+                for duel in active_duels:
+                    challenger_key = duel.get('challenger_key', '')
+                    challenged_key = duel.get('challenged_key', '')
+                    challenger_name = get_profile_display_name(challenger_key, profiles)
+                    challenged_name = get_profile_display_name(challenged_key, profiles)
+
+                    if current_profile_key == challenger_key:
+                        your_move = duel.get('challenger_move')
+                        your_field = 'challenger_move'
+                    else:
+                        your_move = duel.get('challenged_move')
+                        your_field = 'challenged_move'
+
+                    st.write(f"{challenger_name} vs {challenged_name}")
+                    if your_move:
+                        st.caption(f"Your move is locked: {your_move}. Waiting for opponent...")
+                    else:
+                        move_choice = st.radio(
+                            "Choose your move",
+                            options=['Rock', 'Paper', 'Scissors'],
+                            key=f"move_choice_{duel['id']}",
+                            horizontal=True
+                        )
+                        if st.button("Submit Move", key=f"submit_move_{duel['id']}", use_container_width=True):
+                            duel[your_field] = move_choice
+                            save_duels(duel_data)
+                            if resolve_due_duels_and_announce(duel_data, profiles):
+                                save_duels(duel_data)
+                            st.rerun()
 
     if st.session_state.selected_chat_profile_key:
         selected_profile_key = st.session_state.selected_chat_profile_key
