@@ -526,11 +526,18 @@ if st.session_state.show_chat:
             username = st.session_state.profile_name if st.session_state.profile_loaded else "Anonymous"
             save_chat_message(username, new_message, is_bot=False)
             
-            # AI bot butts in randomly (65% chance) - only if API is available
-            if random.random() < 0.65:
+            # AI bot responds almost always (95% chance) - only if API is available
+            if random.random() < 0.95:
+                # Show thinking indicator
+                thinking_placeholder = st.empty()
+                thinking_placeholder.caption("🤖 Bot is typing...")
+                
                 import time
                 time.sleep(0.1)  # Small delay for realism
                 ai_response = get_mean_ai_response(new_message)
+                
+                thinking_placeholder.empty()  # Clear the thinking indicator
+                
                 if ai_response is not None:
                     save_chat_message("Bot", ai_response, is_bot=True)
             
