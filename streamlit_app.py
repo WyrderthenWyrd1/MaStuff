@@ -96,10 +96,11 @@ def get_mean_ai_response(user_message):
             )
             
             return response.choices[0].message.content.strip()
-    except Exception:
-        pass
+    except Exception as e:
+        # Return error message to help debug
+        return f"[Error: {str(e)[:50]}]"
     
-    # Return None if API is not available
+    # Return None if API key not configured
     return None
 
 
