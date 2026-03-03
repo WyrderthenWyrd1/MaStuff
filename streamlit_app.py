@@ -490,6 +490,18 @@ with col2:
 if st.session_state.show_chat:
     st.subheader("Message Board")
     
+    # Check if AI is available
+    api_key = None
+    if hasattr(st, 'secrets') and 'OPENAI_API_KEY' in st.secrets:
+        api_key = st.secrets['OPENAI_API_KEY']
+    elif 'OPENAI_API_KEY' in os.environ:
+        api_key = os.environ.get('OPENAI_API_KEY')
+    
+    if api_key:
+        st.caption("AI Bot: Active")
+    else:
+        st.caption("AI Bot: Offline (no API key configured)")
+    
     # Display messages
     messages = load_chat_messages()
     if messages:
