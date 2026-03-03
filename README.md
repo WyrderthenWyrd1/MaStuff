@@ -17,7 +17,7 @@ The **Streamlit web app** (`streamlit_app.py`) is perfect for sharing with frien
 
 ### Run Locally
 
-1. Install Streamlit:
+1. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
@@ -28,6 +28,16 @@ streamlit run streamlit_app.py
 ```
 
 3. Open your browser to the URL shown (usually `http://localhost:8501`)
+
+### AI Chatbot Setup (Optional)
+
+The app includes an AI-powered chatbot in the message board. To enable real AI responses:
+
+1. Get an OpenAI API key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+2. Create a `.streamlit/secrets.toml` file (see `.streamlit/secrets.toml.example`)
+3. Add your key: `OPENAI_API_KEY = "your-key-here"`
+
+**Note**: The chatbot works without an API key (uses fallback responses), but real AI makes it smarter and meaner.
 
 ### Deploy & Share with Friends 🚀
 
@@ -44,7 +54,13 @@ Deploy for **FREE** on Streamlit Community Cloud:
    - Select your repository, branch, and `streamlit_app.py`
    - Click "Deploy"
 
-3. **Share the URL**: Your friends can now access your app from anywhere!
+3. **Add OpenAI API Key (Optional for AI chatbot)**:
+   - In your deployed app, click "Manage app" (bottom right)
+   - Go to Settings → Secrets
+   - Add: `OPENAI_API_KEY = "your-key-here"`
+   - Save and the app will restart with AI enabled
+
+4. **Share the URL**: Your friends can now access your app from anywhere!
 
 **Note**: Data on Streamlit Cloud resets when the app restarts. For persistent data across deployments, consider using Streamlit's database integration.
 
