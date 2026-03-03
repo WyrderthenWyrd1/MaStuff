@@ -37,6 +37,7 @@ DATA_DIR = "user_data"
 PROFILES_FILE = os.path.join(DATA_DIR, "profiles.json")
 CHAT_FILE = os.path.join(DATA_DIR, "chat.json")
 DUELS_FILE = os.path.join(DATA_DIR, "duels.json")
+DUEL_EXPIRY_SECONDS = 60
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # Initialize session state
@@ -189,7 +190,8 @@ def load_duels():
                             'challenger_move': duel.get('challenger_move'),
                             'challenged_move': duel.get('challenged_move'),
                             'created_at': str(duel.get('created_at', datetime.now().isoformat())),
-                            'announced': bool(duel.get('announced', False))
+                            'announced': bool(duel.get('announced', False)),
+                            'expiry_announced': bool(duel.get('expiry_announced', False))
                         })
                     return normalized[-200:]
         except Exception:
@@ -227,6 +229,17 @@ def determine_rps_winner(challenger_move, challenged_move):
     return 'challenged'
 
 
+def get_duel_seconds_left(duel):
+    """Return remaining seconds before a duel expires"""
+    try:
+        created_at = datetime.fromisoformat(str(duel.get('created_at', '')))
+    except Exception:
+        return 0
+
+    elapsed = (datetime.now() - created_at).total_seconds()
+    return max(0, int(DUEL_EXPIRY_SECONDS - elapsed))
+
+
 def resolve_due_duels_and_announce(duels, profiles):
     """Resolve completed duel moves and announce winner in chat"""
     changed = False
@@ -245,17 +258,17 @@ def resolve_due_duels_and_announce(duels, profiles):
 
         if winner_side == 'tie':
             result_message = (
-                f"⚔️ Duel Result: {challenger_name} ({challenger_move}) vs "
+                f"Duel Result: {challenger_name} ({challenger_move}) vs "
                 f"{challenged_name} ({challenged_move}) ended in a tie!"
             )
         elif winner_side == 'challenger':
             result_message = (
-                f"🏆 Duel Winner: {challenger_name}! "
+                f"Duel Winner: {challenger_name}! "
                 f"({challenger_move} beats {challenged_name}'s {challenged_move})"
             )
         else:
             result_message = (
-                f"🏆 Duel Winner: {challenged_name}! "
+                f"Duel Winner: {challenged_name}! "
                 f"({challenged_move} beats {challenger_name}'s {challenger_move})"
             )
 
@@ -265,6 +278,42 @@ def resolve_due_duels_and_announce(duels, profiles):
 
         duel['status'] = 'completed'
         changed = True
+
+    return changed
+
+
+def expire_stale_duels_and_announce(duels, profiles):
+    """Expire pending/active duels older than DUEL_EXPIRY_SECONDS"""
+    changed = False
+    now = datetime.now()
+
+    for duel in duels:
+        status = duel.get('status')
+        if status not in {'pending', 'active'}:
+            continue
+
+        try:
+            created_at = datetime.fromisoformat(str(duel.get('created_at', '')))
+        except Exception:
+            continue
+
+        age_seconds = (now - created_at).total_seconds()
+        if age_seconds <= DUEL_EXPIRY_SECONDS:
+            continue
+
+        if status == 'active' and duel.get('challenger_move') and duel.get('challenged_move'):
+            continue
+
+        duel['status'] = 'expired'
+        changed = True
+
+        if not duel.get('expiry_announced', False):
+            challenger_name = get_profile_display_name(duel.get('challenger_key', ''), profiles)
+            challenged_name = get_profile_display_name(duel.get('challenged_key', ''), profiles)
+            save_system_chat_message(
+                f"Duel expired: {challenger_name} vs {challenged_name} (no result after 1 minute)."
+            )
+            duel['expiry_announced'] = True
 
     return changed
 
@@ -937,6 +986,8 @@ st.divider()
 col1, col2 = st.columns([5, 1])
 with col2:
     if st.button("💬 Chat" if not st.session_state.show_chat else "✕ Close"):
+        if not st.session_state.show_chat:
+            st.session_state.chat_sort_order = "Newest"
         st.session_state.show_chat = not st.session_state.show_chat
         st.rerun()
 
@@ -963,6 +1014,9 @@ if st.session_state.show_chat:
         save_profiles(profiles)
 
     duel_data = load_duels()
+    if expire_stale_duels_and_announce(duel_data, profiles):
+        save_duels(duel_data)
+        messages = load_chat_messages()
     if resolve_due_duels_and_announce(duel_data, profiles):
         save_duels(duel_data)
         messages = load_chat_messages()
@@ -973,7 +1027,7 @@ if st.session_state.show_chat:
         blocked_profiles = set(profiles[current_profile_key].get('blocked_profiles', []))
 
     if st.session_state.profile_loaded and current_profile_key:
-        with st.expander("⚔️ Duel Arena"):
+        with st.expander("Duel"):
             other_profile_keys = [
                 key for key in sorted(profiles.keys())
                 if key != current_profile_key
@@ -1004,12 +1058,13 @@ if st.session_state.show_chat:
                             'challenger_move': None,
                             'challenged_move': None,
                             'created_at': datetime.now().isoformat(),
-                            'announced': False
+                            'announced': False,
+                            'expiry_announced': False
                         })
                         save_duels(duel_data)
                         challenger_name = get_profile_display_name(current_profile_key, profiles)
                         opponent_name = get_profile_display_name(opponent_key, profiles)
-                        save_system_chat_message(f"⚔️ {challenger_name} challenged {opponent_name} to a duel!")
+                        save_system_chat_message(f"{challenger_name} challenged {opponent_name} to a duel.")
                         st.success("Challenge sent")
                         st.rerun()
             else:
@@ -1023,18 +1078,20 @@ if st.session_state.show_chat:
                 st.markdown("**Incoming Challenges**")
                 for duel in incoming_challenges:
                     challenger_name = get_profile_display_name(duel.get('challenger_key', ''), profiles)
+                    seconds_left = get_duel_seconds_left(duel)
+                    st.caption(f"Expires in {seconds_left}s")
                     row1, row2 = st.columns(2)
                     with row1:
                         if st.button(f"Accept {challenger_name}", key=f"accept_duel_{duel['id']}", use_container_width=True):
                             duel['status'] = 'active'
                             save_duels(duel_data)
-                            save_system_chat_message(f"⚔️ {get_profile_display_name(current_profile_key, profiles)} accepted {challenger_name}'s duel!")
+                            save_system_chat_message(f"{get_profile_display_name(current_profile_key, profiles)} accepted {challenger_name}'s duel.")
                             st.rerun()
                     with row2:
                         if st.button(f"Decline {challenger_name}", key=f"decline_duel_{duel['id']}", use_container_width=True):
                             duel['status'] = 'declined'
                             save_duels(duel_data)
-                            save_system_chat_message(f"⚔️ {get_profile_display_name(current_profile_key, profiles)} declined {challenger_name}'s duel.")
+                            save_system_chat_message(f"{get_profile_display_name(current_profile_key, profiles)} declined {challenger_name}'s duel.")
                             st.rerun()
 
             active_duels = [
@@ -1058,6 +1115,8 @@ if st.session_state.show_chat:
                         your_field = 'challenged_move'
 
                     st.write(f"{challenger_name} vs {challenged_name}")
+                    seconds_left = get_duel_seconds_left(duel)
+                    st.caption(f"Time left: {seconds_left}s")
                     if your_move:
                         st.caption(f"Your move is locked: {your_move}. Waiting for opponent...")
                     else:
