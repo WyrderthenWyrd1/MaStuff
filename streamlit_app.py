@@ -826,15 +826,12 @@ if st.session_state.show_chat:
     with chat_title_col:
         st.subheader("Message Board")
     with chat_sort_col:
-        selected_order = st.segmented_control(
+        st.segmented_control(
             "Order",
             options=["Newest", "Oldest"],
-            default=st.session_state.chat_sort_order,
             key="chat_sort_order",
             label_visibility="collapsed"
         )
-        if selected_order in ["Newest", "Oldest"]:
-            st.session_state.chat_sort_order = selected_order
     with chat_refresh_col:
         if st.button("⟳ Refresh", key="refresh_chat_btn", use_container_width=True):
             st.rerun()
