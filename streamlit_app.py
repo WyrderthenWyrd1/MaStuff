@@ -5,6 +5,7 @@ import re
 import hashlib
 import base64
 import html
+from datetime import datetime
 from typing import Dict, List
 
 # Page configuration
@@ -43,6 +44,12 @@ if 'display_name' not in st.session_state:
 
 if 'show_chat' not in st.session_state:
     st.session_state.show_chat = False
+
+if 'selected_chat_profile_key' not in st.session_state:
+    st.session_state.selected_chat_profile_key = ""
+
+if 'selected_chat_profile_name' not in st.session_state:
+    st.session_state.selected_chat_profile_name = ""
 
 
 def sanitize_profile_key(profile_name):
@@ -175,6 +182,54 @@ def save_profiles(profiles):
     except Exception as e:
         st.error(f"Failed to save profiles: {str(e)}")
         return False
+
+
+def normalize_profiles(profiles):
+    """Ensure profile records have expected defaults"""
+    if not isinstance(profiles, dict):
+        return {}, False
+
+    changed = False
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    for profile_key, profile in profiles.items():
+        if not isinstance(profile, dict):
+            profiles[profile_key] = {
+                'name': profile_key,
+                'pin_hash': '',
+                'display_name': profile_key,
+                'name_color': '#4F8BF9',
+                'avatar_emoji': '🙂',
+                'avatar_image_b64': '',
+                'join_date': today,
+                'blocked_profiles': []
+            }
+            changed = True
+            continue
+
+        if 'name' not in profile:
+            profile['name'] = profile_key
+            changed = True
+        if 'display_name' not in profile:
+            profile['display_name'] = profile.get('name', profile_key)
+            changed = True
+        if 'name_color' not in profile:
+            profile['name_color'] = '#4F8BF9'
+            changed = True
+        if 'avatar_emoji' not in profile:
+            profile['avatar_emoji'] = '🙂'
+            changed = True
+        if 'avatar_image_b64' not in profile:
+            profile['avatar_image_b64'] = ''
+            changed = True
+        if 'join_date' not in profile:
+            profile['join_date'] = today
+            changed = True
+        if 'blocked_profiles' not in profile or not isinstance(profile.get('blocked_profiles'), list):
+            profile['blocked_profiles'] = []
+            changed = True
+
+    return profiles, changed
 
 
 def get_profile_chat_style(profile_key, profiles):
@@ -356,6 +411,9 @@ with st.sidebar:
             else:
                 pin_value = pin_input.strip()
                 profiles = load_profiles()
+                profiles, profiles_changed = normalize_profiles(profiles)
+                if profiles_changed:
+                    save_profiles(profiles)
 
                 if profile_key in profiles:
                     saved_hash = profiles[profile_key].get('pin_hash', '')
@@ -369,7 +427,9 @@ with st.sidebar:
                         'display_name': profile_input.strip(),
                         'name_color': '#4F8BF9',
                         'avatar_emoji': '🙂',
-                        'avatar_image_b64': ''
+                        'avatar_image_b64': '',
+                        'join_date': datetime.now().strftime("%Y-%m-%d"),
+                        'blocked_profiles': []
                     }
                     if not save_profiles(profiles):
                         st.stop()
@@ -380,6 +440,8 @@ with st.sidebar:
                 profile_record.setdefault('name_color', '#4F8BF9')
                 profile_record.setdefault('avatar_emoji', '🙂')
                 profile_record.setdefault('avatar_image_b64', '')
+                    profile_record.setdefault('join_date', datetime.now().strftime("%Y-%m-%d"))
+                    profile_record.setdefault('blocked_profiles', [])
                 profiles[profile_key] = profile_record
                 save_profiles(profiles)
 
@@ -405,6 +467,9 @@ with st.sidebar:
         st.caption(f"Profile: {st.session_state.profile_name}")
 
         profiles = load_profiles()
+        profiles, profiles_changed = normalize_profiles(profiles)
+        if profiles_changed:
+            save_profiles(profiles)
         current_profile = profiles.get(st.session_state.profile_key, {})
         current_display_name = current_profile.get('display_name', st.session_state.profile_name)
         current_name_color = current_profile.get('name_color', '#4F8BF9')
@@ -465,6 +530,8 @@ with st.sidebar:
                     profile_data['display_name'] = cleaned_display_name
                     profile_data['name_color'] = selected_name_color
                     profile_data['avatar_emoji'] = selected_avatar_emoji
+                    profile_data.setdefault('join_date', datetime.now().strftime("%Y-%m-%d"))
+                    profile_data.setdefault('blocked_profiles', [])
                     if uploaded_avatar is not None:
                         profile_data['avatar_image_b64'] = base64.b64encode(uploaded_avatar.getvalue()).decode("utf-8")
                     else:
@@ -492,10 +559,34 @@ with st.sidebar:
                     profile_data['display_name'] = selected_display_name.strip() or st.session_state.display_name or st.session_state.profile_name
                     profile_data['name_color'] = selected_name_color
                     profile_data['avatar_emoji'] = selected_avatar_emoji
+                    profile_data.setdefault('join_date', datetime.now().strftime("%Y-%m-%d"))
+                    profile_data.setdefault('blocked_profiles', [])
                     profile_data['avatar_image_b64'] = ''
                     profiles[st.session_state.profile_key] = profile_data
                     save_profiles(profiles)
                     st.success("Profile picture removed")
+
+        with st.expander("Blocked Users"):
+            current_profile = profiles.get(st.session_state.profile_key, {})
+            blocked_keys = list(current_profile.get('blocked_profiles', []))
+
+            if blocked_keys:
+                for blocked_key in blocked_keys:
+                    blocked_profile = profiles.get(blocked_key, {})
+                    blocked_name = blocked_profile.get('display_name') or blocked_profile.get('name') or blocked_key
+
+                    row_col1, row_col2 = st.columns([3, 1])
+                    with row_col1:
+                        st.write(blocked_name)
+                    with row_col2:
+                        if st.button("Unblock", key=f"sidebar_unblock_{blocked_key}", use_container_width=True):
+                            updated_blocked = [key for key in blocked_keys if key != blocked_key]
+                            current_profile['blocked_profiles'] = updated_blocked
+                            profiles[st.session_state.profile_key] = current_profile
+                            save_profiles(profiles)
+                            st.rerun()
+            else:
+                st.caption("No blocked users")
 
     st.divider()
     st.header("Classes")
@@ -718,11 +809,77 @@ if st.session_state.show_chat:
     # Display messages
     messages = load_chat_messages()
     profiles = load_profiles()
-    if messages:
+    profiles, profiles_changed = normalize_profiles(profiles)
+    if profiles_changed:
+        save_profiles(profiles)
+
+    current_profile_key = st.session_state.profile_key if st.session_state.profile_loaded else ""
+    blocked_profiles = set()
+    if current_profile_key and current_profile_key in profiles:
+        blocked_profiles = set(profiles[current_profile_key].get('blocked_profiles', []))
+
+    if st.session_state.selected_chat_profile_key:
+        selected_profile_key = st.session_state.selected_chat_profile_key
+        selected_profile = profiles.get(selected_profile_key, {})
+        selected_style = get_profile_chat_style(selected_profile_key, profiles)
+        selected_avatar = get_avatar_for_chat(selected_style)
+        selected_name = selected_profile.get('display_name') or st.session_state.selected_chat_profile_name or selected_profile.get('name') or "Unknown User"
+        selected_join_date = selected_profile.get('join_date', 'Unknown')
+
+        with st.container(border=True):
+            if isinstance(selected_avatar, bytes):
+                st.image(selected_avatar, width=140)
+            else:
+                st.markdown(f"# {selected_avatar}")
+
+            st.markdown(
+                f"<h1 style='margin-bottom:0; color:{selected_style['name_color']};'>{html.escape(selected_name)}</h1>",
+                unsafe_allow_html=True
+            )
+            st.caption(f"Joined: {selected_join_date}")
+
+            recent_messages = [
+                msg for msg in messages
+                if (msg.get('profile_key') or sanitize_profile_key(msg['user'])) == selected_profile_key
+            ][-10:]
+            if recent_messages:
+                st.markdown("**Previous Messages**")
+                for old_msg in recent_messages:
+                    st.write(f"• {old_msg['message']}")
+            else:
+                st.caption("No previous messages")
+
+            action_col1, action_col2 = st.columns(2)
+            with action_col1:
+                if current_profile_key and selected_profile_key and selected_profile_key != current_profile_key:
+                    is_blocked = selected_profile_key in blocked_profiles
+                    button_label = "Unblock User" if is_blocked else "Block User"
+                    if st.button(button_label, key=f"toggle_block_{selected_profile_key}", use_container_width=True):
+                        current_profile = profiles.get(current_profile_key, {})
+                        current_blocked = set(current_profile.get('blocked_profiles', []))
+                        if selected_profile_key in current_blocked:
+                            current_blocked.remove(selected_profile_key)
+                        else:
+                            current_blocked.add(selected_profile_key)
+                        current_profile['blocked_profiles'] = sorted(current_blocked)
+                        profiles[current_profile_key] = current_profile
+                        save_profiles(profiles)
+                        st.rerun()
+            with action_col2:
+                if st.button("Close Profile", key="close_viewed_profile", use_container_width=True):
+                    st.session_state.selected_chat_profile_key = ""
+                    st.session_state.selected_chat_profile_name = ""
+                    st.rerun()
+
+    visible_messages = [
+        msg for msg in messages
+        if (msg.get('profile_key') or sanitize_profile_key(msg['user'])) not in blocked_profiles
+    ]
+
+    if visible_messages:
         chat_container = st.container()
         with chat_container:
-            for msg in messages[-20:]:
-                current_profile_key = st.session_state.profile_key if st.session_state.profile_loaded else ""
+            for idx, msg in enumerate(visible_messages[-20:]):
                 message_profile_key = msg.get('profile_key') or sanitize_profile_key(msg['user'])
                 profile_style = get_profile_chat_style(message_profile_key, profiles)
                 bubble_type = "user" if current_profile_key and message_profile_key == current_profile_key else "assistant"
@@ -731,13 +888,20 @@ if st.session_state.show_chat:
                 bubble_avatar = get_avatar_for_chat(profile_style)
                 safe_user_name = html.escape(msg['user'])
                 with st.chat_message(bubble_type, avatar=bubble_avatar):
+                    if st.button(msg['user'], key=f"view_user_{idx}_{message_profile_key}"):
+                        st.session_state.selected_chat_profile_key = message_profile_key
+                        st.session_state.selected_chat_profile_name = msg['user']
+                        st.rerun()
                     st.markdown(
                         f"<span style='font-weight:700; color:{profile_style['name_color']};'>{safe_user_name}</span>",
                         unsafe_allow_html=True
                     )
                     st.write(msg['message'])
     else:
-        st.caption("No messages yet. Start the conversation.")
+        if blocked_profiles:
+            st.caption("No visible messages (blocked users are hidden).")
+        else:
+            st.caption("No messages yet. Start the conversation.")
     
     # Input for new message
     with st.form("chat_form", clear_on_submit=True):
