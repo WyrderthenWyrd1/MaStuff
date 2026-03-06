@@ -95,27 +95,34 @@ def predict_finalists(teams, event_key, tba_client):
     """Predict likely finalists based on historical data"""
     team_scores = []
     
-    for team in teams:
+    # Limit to prevent too many API calls
+    max_teams_to_analyze = min(len(teams), 30)
+    
+    for idx, team in enumerate(teams[:max_teams_to_analyze]):
         team_key = team.get('key', '')
         
-        # Get historical events for past 2 years
-        events_2025 = tba_client.get_team_events(team_key, 2025)
-        events_2024 = tba_client.get_team_events(team_key, 2024)
-        
-        # Calculate performance metrics
-        total_events = len(events_2025) + len(events_2024)
-        
-        if total_events > 0:
-            # Simple scoring: more events = more experience
-            experience_score = min(total_events * 10, 100)
+        try:
+            # Get historical events for past 2 years
+            events_2025 = tba_client.get_team_events(team_key, 2025) or []
+            events_2024 = tba_client.get_team_events(team_key, 2024) or []
             
-            team_scores.append({
-                'team_key': team_key,
-                'team_number': team.get('team_number'),
-                'team_name': team.get('nickname', 'Unknown'),
-                'score': experience_score,
-                'events_count': total_events
-            })
+            # Calculate performance metrics
+            total_events = len(events_2025) + len(events_2024)
+            
+            if total_events > 0:
+                # Simple scoring: more events = more experience
+                experience_score = min(total_events * 10, 100)
+                
+                team_scores.append({
+                    'team_key': team_key,
+                    'team_number': team.get('team_number'),
+                    'team_name': team.get('nickname', 'Unknown'),
+                    'score': experience_score,
+                    'events_count': total_events
+                })
+        except Exception as e:
+            # Skip teams that cause errors
+            continue
     
     # Sort by score
     team_scores.sort(key=lambda x: x['score'], reverse=True)
@@ -124,7 +131,7 @@ def predict_finalists(teams, event_key, tba_client):
 
 
 # Main app
-st.title("Team 4984 Scouting System")
+st.title("Bullseye Scouting Bot 3000")
 st.caption("FRC 2026 Season Analysis")
 
 # Sidebar
@@ -390,6 +397,7 @@ elif page == "Team Lookup":
 elif page == "Predictions":
     st.header("Event Performance Predictions")
     st.caption("Based on historical data from 2024-2025 seasons")
+    st.warning("Note: This analysis may take 30-60 seconds due to API rate limits. Analysis limited to first 30 teams.")
     
     # Load team events first
     if st.session_state.my_team_events is None:
@@ -406,32 +414,37 @@ elif page == "Predictions":
         
         selected_event = next((e for e in our_events if e.get('name') == selected_event_name), None)
         
-        if selected_event:
+        if selected_event and st.button("Run Prediction Analysis"):
             st.subheader(f"Predicted Finalists: {selected_event.get('name')}")
             
-            with st.spinner("Analyzing historical performance data..."):
-                teams = st.session_state.tba_client.get_event_teams(selected_event['key'])
-                
-                if teams:
-                    predictions = predict_finalists(teams, selected_event['key'], st.session_state.tba_client)
+            try:
+                with st.spinner("Analyzing historical performance data (this may take a minute)..."):
+                    teams = st.session_state.tba_client.get_event_teams(selected_event['key'])
                     
-                    if predictions:
-                        st.info(f"Top {len(predictions)} predicted performers based on experience and historical data")
+                    if teams:
+                        st.info(f"Analyzing {min(len(teams), 30)} of {len(teams)} teams...")
+                        predictions = predict_finalists(teams, selected_event['key'], st.session_state.tba_client)
                         
-                        for idx, pred in enumerate(predictions, 1):
-                            col1, col2, col3, col4 = st.columns([1, 2, 2, 1])
-                            with col1:
-                                st.markdown(f"**#{idx}**")
-                            with col2:
-                                st.markdown(f"**Team {pred['team_number']}**")
-                            with col3:
-                                st.markdown(pred['team_name'])
-                            with col4:
-                                st.caption(f"{pred['events_count']} past events")
+                        if predictions:
+                            st.success(f"Analysis complete! Top {len(predictions)} predicted performers:")
+                            
+                            for idx, pred in enumerate(predictions, 1):
+                                col1, col2, col3, col4 = st.columns([1, 2, 3, 2])
+                                with col1:
+                                    st.markdown(f"**#{idx}**")
+                                with col2:
+                                    st.markdown(f"**Team {pred['team_number']}**")
+                                with col3:
+                                    st.markdown(pred['team_name'])
+                                with col4:
+                                    st.caption(f"{pred['events_count']} events (2024-25)")
+                        else:
+                            st.warning("Insufficient historical data for predictions")
                     else:
-                        st.warning("Insufficient historical data for predictions")
-                else:
-                    st.warning("No team data available yet")
+                        st.warning("No team data available yet")
+            except Exception as e:
+                st.error(f"Error running predictions: {str(e)}")
+                st.info("This may be due to API rate limits. Please try again in a few minutes.")
     else:
         st.warning("No events scheduled for analysis")
 
