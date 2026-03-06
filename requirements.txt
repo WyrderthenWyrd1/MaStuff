@@ -1,7 +1,4 @@
 streamlit>=1.31.0
 requests>=2.28.0
-<<<<<<< HEAD
 pandas>=2.0.0
-=======
-streamlit-autorefresh>=1.0.1
->>>>>>> bf4de144de7690f42b854360e742aca18587fcad
+
