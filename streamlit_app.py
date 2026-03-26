@@ -47,10 +47,37 @@ if 'selected_team' not in st.session_state:
 if 'view_team_history' not in st.session_state:
     st.session_state.view_team_history = False
 
+if 'scouting_competition' not in st.session_state:
+    st.session_state.scouting_competition = "San Diego Comp"
+
 
 def format_event_name(event):
     """Format event name for display"""
     return f"{event.get('name', 'Unknown Event')} ({event.get('event_code', 'N/A').upper()})"
+
+
+def find_scouting_event(events, competition_label):
+    """Find San Diego or Orange County event from annual event list."""
+    if not events:
+        return None
+
+    name_keywords = {
+        "San Diego Comp": ["san diego"],
+        "Orange County Comp": ["orange county"]
+    }
+
+    event_name = competition_label.lower()
+    for event in events:
+        event_name = event.get('name', '').lower()
+        if any(keyword in event_name for keyword in name_keywords.get(competition_label, [])):
+            return event
+
+    return None
+
+
+def format_team_list(team_keys):
+    """Convert team keys to a readable team number list."""
+    return ", ".join(team.replace('frc', '') for team in team_keys)
 
 
 def get_match_score_breakdown(match, alliance):
@@ -141,7 +168,7 @@ with st.sidebar:
     
     page = st.radio(
         "Select View:",
-        ["Team Events", "All Events", "Team Lookup", "Predictions"],
+        ["Scouting Home", "Team Events", "All Events", "Team Lookup", "Predictions"],
         label_visibility="collapsed"
     )
     
@@ -247,7 +274,74 @@ if st.session_state.view_team_history and st.session_state.selected_team:
 
 
 # Page: Team Events
-if page == "Team Events":
+if page == "Scouting Home":
+    st.header("Scouting Home")
+    st.caption("Pick your event, then choose Red or Blue alliance for qualification match scouting.")
+
+    competition = st.radio(
+        "Which competition are you scouting?",
+        ["San Diego Comp", "Orange County Comp"],
+        horizontal=True,
+        index=0 if st.session_state.scouting_competition == "San Diego Comp" else 1
+    )
+    st.session_state.scouting_competition = competition
+
+    if st.session_state.events_data is None:
+        with st.spinner("Loading 2026 events..."):
+            st.session_state.events_data = st.session_state.tba_client.get_events_by_year(CURRENT_YEAR)
+
+    selected_event = find_scouting_event(st.session_state.events_data, competition)
+
+    if not selected_event:
+        st.warning(f"Could not find a 2026 event matching '{competition}' yet.")
+    else:
+        st.success(f"Selected event: {selected_event.get('name', 'Unknown Event')}")
+        st.caption(
+            f"{selected_event.get('city', 'N/A')}, {selected_event.get('state_prov', 'N/A')} | "
+            f"{selected_event.get('start_date', 'N/A')}"
+        )
+
+        with st.spinner("Loading qualification matches..."):
+            matches = st.session_state.tba_client.get_event_matches(selected_event['key'])
+
+        qual_matches = [m for m in matches if m.get('comp_level') == 'qm']
+        qual_matches.sort(key=lambda x: x.get('match_number', 0))
+
+        if not qual_matches:
+            st.info("Qualification matches are not available yet for this event.")
+        else:
+            alliance_choice = st.radio(
+                "Which alliance are you scouting?",
+                ["Red", "Blue"],
+                horizontal=True
+            )
+
+            st.subheader(f"Qualification Matches ({len(qual_matches)})")
+
+            for match in qual_matches:
+                red_alliance = match.get('alliances', {}).get('red', {})
+                blue_alliance = match.get('alliances', {}).get('blue', {})
+
+                scouting_team_keys = (
+                    red_alliance.get('team_keys', [])
+                    if alliance_choice == "Red"
+                    else blue_alliance.get('team_keys', [])
+                )
+
+                with st.expander(f"Qual Match {match.get('match_number', 'N/A')}"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown("**Red Alliance**")
+                        st.write(format_team_list(red_alliance.get('team_keys', [])))
+                        st.metric("Red Score", red_alliance.get('score', 0))
+                    with col2:
+                        st.markdown("**Blue Alliance**")
+                        st.write(format_team_list(blue_alliance.get('team_keys', [])))
+                        st.metric("Blue Score", blue_alliance.get('score', 0))
+
+                    st.markdown(f"**Scouting Focus ({alliance_choice}):** {format_team_list(scouting_team_keys)}")
+
+elif page == "Team Events":
     st.header("Team 4984 - 2026 Season Schedule")
     
     # Load team events
